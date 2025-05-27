@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+openai
+python-multipart
+PyPDF2
+python-docx
+requests
+youtube-transcript-api
+whisper  # if using local Whisper model
