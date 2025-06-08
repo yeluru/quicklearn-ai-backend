@@ -6,4 +6,5 @@ PyPDF2
 python-docx
 requests
 youtube-transcript-api
+yt-dlp
 whisper  # if using local Whisper model

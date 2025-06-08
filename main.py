@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Request
+from fastapi import FastAPI, UploadFile, File, Request, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from openai import OpenAI
@@ -32,14 +32,23 @@ app.add_middleware(
 
 def extract_video_id(url):
     parsed = urlparse(url)
-    if 'youtube' in parsed.netloc:
+    if 'youtu.be' in parsed.netloc:
+        # Handles: https://youtu.be/VIDEOID?params
+        return parsed.path.strip('/').split('/')[0]
+    if 'youtube.com' in parsed.netloc:
+        # Handles: https://www.youtube.com/watch?v=VIDEOID
         return parse_qs(parsed.query).get('v', [None])[0]
-    elif 'youtu.be' in parsed.netloc:
-        return parsed.path.strip('/')
     return None
+
+def normalize_youtube_url(url):
+    video_id = extract_video_id(url)
+    if video_id:
+        return f"https://www.youtube.com/watch?v={video_id}"
+    return url
 
 @app.get("/playlist-transcript")
 def get_playlist_transcript(playlist_id: str):
+    from youtube_transcript_api import YouTubeTranscriptApi
     try:
         all_text = []
         page_token = ""
@@ -56,10 +65,13 @@ def get_playlist_transcript(playlist_id: str):
             items = response.get("items", [])
             for item in items:
                 video_id = item["snippet"]["resourceId"]["videoId"]
-                video_url = f"https://youtu.be/{video_id}"
-                video_text = get_youtube_transcript(video_url)
-                if "transcript" in video_text:
-                    all_text.append(video_text["transcript"])
+                try:
+                    transcript = YouTubeTranscriptApi.get_transcript(video_id)
+                    lines = [x['text'].strip() for x in transcript if x['text'].strip()]
+                    text = " ".join(lines)
+                    all_text.append(text)
+                except Exception:
+                    continue  # skip videos without transcripts
 
             if "nextPageToken" in response:
                 page_token = response["nextPageToken"]
@@ -118,7 +130,6 @@ def get_youtube_transcript(url: str):
         return {"error": "Invalid YouTube URL"}
     except Exception as e:
         return {"error": str(e)}
-
 
 @app.get("/transcribe-audio")
 def transcribe_audio(url: str, use_openai: Optional[bool] = True):
@@ -203,7 +214,6 @@ Avoid motivational filler or overuse of metaphors. Keep the writing focused, inf
 
     return StreamingResponse(chunk_stream(), media_type="text/plain")
 
-
 @app.post("/qna-stream")
 async def qna_stream(request: Request):
     body = await request.json()
@@ -271,7 +281,6 @@ def stream_openai_response(messages, max_tokens=1024):
             yield content
     return StreamingResponse(generate(), media_type="text/plain")
 
-
 @app.post("/chat-on-topic")
 async def chat_on_topic(request: Request):
     body = await request.json()
@@ -311,7 +320,6 @@ def stream_youtube_transcript(url: str):
     except Exception as e:
         return {"error": str(e)}
 
-from fastapi import Request
 from pydantic import BaseModel
 
 class SummaryInput(BaseModel):
@@ -363,4 +371,3 @@ Summary:
                     continue
 
     return {"questions": questions}
-
