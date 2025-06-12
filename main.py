@@ -44,17 +44,12 @@ app.add_middleware(
 def extract_video_id(url):
     parsed = urlparse(url)
     if 'youtu.be' in parsed.netloc:
-        # Handles: https://youtu.be/VIDEOID?params
         return parsed.path.strip('/').split('/')[0]
     if 'youtube.com' in parsed.netloc:
-        # Handles: https://www.youtube.com/watch?v=VIDEOID
         return parse_qs(parsed.query).get('v', [None])[0]
     return None
 
 def extract_playlist_id(url: str) -> Optional[str]:
-    """
-    Extract playlist ID from various YouTube playlist URL formats
-    """
     try:
         parsed = urlparse(url)
         if 'youtube.com' in parsed.netloc or 'youtu.be' in parsed.netloc:
@@ -75,16 +70,10 @@ def normalize_youtube_url(url):
 
 @app.get("/transcript-stream")
 async def stream_video_transcript_get(url: str):
-    """
-    Stream transcript extraction with real-time progress updates (GET version)
-    """
     return await stream_video_transcript({"url": url})
 
 @app.post("/transcript-stream")
 async def stream_video_transcript(request: Request):
-    """
-    Stream transcript extraction with real-time progress updates
-    """
     try:
         body = await request.json()
         url = body.get("url")
@@ -98,7 +87,6 @@ async def stream_video_transcript(request: Request):
                 yield f"data: {json.dumps({'type': 'progress', 'message': 'Analyzing URL...'})}\n\n"
                 await asyncio.sleep(0.1)
                 
-                # Check for YouTube playlist
                 playlist_id = extract_playlist_id(url)
                 if playlist_id:
                     logging.info(f"Detected YouTube playlist ID: {playlist_id}")
@@ -127,28 +115,22 @@ async def stream_video_transcript(request: Request):
     except Exception as e:
         logging.error(f"Error setting up transcript stream: {str(e)}")
         return JSONResponse(content={"error": str(e)}, status_code=500)
-       
+
 async def process_transcript_stream(url: str):
-    """
-    Shared logic for transcript streaming
-    """
     try:
         logging.info(f"Starting streaming transcript for URL: {url}")
         
         async def transcript_generator():
             try:
-                # Send initial status
                 yield f"data: {json.dumps({'status': 'starting', 'message': 'Analyzing URL...'})}\n\n"
                 await asyncio.sleep(0.1)
                 
-                # Check if it's a playlist URL
                 playlist_id = extract_playlist_id(url)
                 if playlist_id:
                     yield f"data: {json.dumps({'status': 'playlist_detected', 'message': 'Playlist detected, processing videos...'})}\n\n"
                     async for chunk in stream_playlist_transcript(playlist_id):
                         yield chunk
                 else:
-                    # Handle single video
                     video_id = extract_video_id(url)
                     if not video_id:
                         yield f"data: {json.dumps({'status': 'error', 'message': 'Invalid YouTube URL'})}\n\n"
@@ -177,9 +159,6 @@ async def process_transcript_stream(url: str):
         return JSONResponse(content={"error": str(e)}, status_code=500)
 
 async def stream_playlist_transcript(playlist_id: str):
-    """
-    Stream playlist transcript extraction with progress updates
-    """
     try:
         page_token = ""
         video_count = 0
@@ -259,13 +238,8 @@ async def stream_playlist_transcript(playlist_id: str):
         yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
 def clean_transcript_text(text: str) -> str:
-    """
-    Clean transcript text to remove duplicates and formatting issues
-    """
     import re
-    # Remove metadata like "Kind: captions Language: en"
     text = re.sub(r'^Kind:\s*captions\s*Language:\s*\w+\s*', '', text, flags=re.IGNORECASE)
-    # Split into sentences and remove duplicates
     sentences = re.split(r'([.!?]+)', text)
     cleaned_sentences = []
     seen_sentences = set()
@@ -295,7 +269,6 @@ def clean_transcript_text(text: str) -> str:
         if len(clean_sentence) > 10:
             cleaned_sentences.append(clean_sentence)
     
-    # Join sentences and format into paragraphs
     full_text = ' '.join(cleaned_sentences)
     sentences = re.split(r'(?<=[.!?])\s+', full_text)
     paragraphs = []
@@ -310,44 +283,33 @@ def clean_transcript_text(text: str) -> str:
     return '\n\n'.join(paragraphs)
 
 def parse_vtt_content(content: str) -> str:
-    """
-    Parse VTT subtitle content and extract clean text
-    """
     lines = content.split('\n')
     transcript_lines = []
     for line in lines:
         line = line.strip()
-        # Skip VTT headers, timestamps, and empty lines
         if (line and 
             not line.startswith('WEBVTT') and 
             '-->' not in line and 
             not line.isdigit() and
             not line.startswith('NOTE') and
             not line.startswith('STYLE')):
-            # Remove VTT formatting tags
             clean_line = remove_vtt_tags(line)
             if clean_line:
                 transcript_lines.append(clean_line)
-    # Join and format
     text = ' '.join(transcript_lines)
     return format_transcript(text)
 
 # Keep your existing non-streaming endpoints for backward compatibility
 @app.get("/transcript")
 def get_youtube_transcript(url: str):
-    """
-    Enhanced transcript function - now properly handles playlists
-    """
     try:
         logging.info(f"Received request for transcript with URL: {url}")
         
-        # FIRST: Check if it's a playlist URL
         playlist_id = extract_playlist_id(url)
         if playlist_id:
             logging.info(f"Detected playlist URL with ID: {playlist_id}, routing to playlist handler")
             return get_playlist_transcript(playlist_id)
         
-        # THEN: Handle individual video
         video_id = extract_video_id(url)
         if not video_id:
             logging.error(f"Invalid YouTube URL: {url}")
@@ -355,20 +317,17 @@ def get_youtube_transcript(url: str):
 
         logging.info(f"Extracted video ID: {video_id}")
         
-        # Method 1: Try yt-dlp for subtitles
         transcript_result = get_transcript_via_ytdlp(url)
         if transcript_result.get("transcript"):
             logging.info(f"Successfully retrieved transcript via yt-dlp for video ID: {video_id}")
             return transcript_result
         
-        # Method 2: Fall back to audio transcription
         logging.info(f"No subtitles found, trying audio transcription for video ID: {video_id}")
         audio_result = get_transcript_via_audio(url)
         if audio_result.get("transcript"):
             logging.info(f"Successfully retrieved transcript via audio for video ID: {video_id}")
             return audio_result
         
-        # If both methods fail
         logging.error(f"All methods failed for video ID: {video_id}")
         return {"error": "No transcript available for this video. Try a different video with captions or clear audio."}
         
@@ -377,9 +336,6 @@ def get_youtube_transcript(url: str):
         return {"error": str(e)}
 
 async def stream_single_video_transcript(url: str):
-    """
-    Stream transcript extraction for a single video with fallback to audio if subtitles are unavailable or empty.
-    """
     try:
         yield f"data: {json.dumps({'type': 'progress', 'message': 'Checking for subtitles...'})}\n\n"
         await asyncio.sleep(0.1)
@@ -389,7 +345,7 @@ async def stream_single_video_transcript(url: str):
         if subtitle_result.get("transcript"):
             transcript = clean_transcript_text(subtitle_result["transcript"])
             logging.info(f"Subtitle transcript length after cleaning: {len(transcript)}")
-            if transcript.strip():  # Ensure transcript is not empty or whitespace
+            if transcript.strip():
                 yield f"data: {json.dumps({'type': 'progress', 'message': 'Subtitles found, processing...'})}\n\n"
                 await asyncio.sleep(0.1)
                 
@@ -417,7 +373,6 @@ async def stream_single_video_transcript(url: str):
             else:
                 logging.warning("Subtitle transcript is empty after cleaning, falling back to audio")
         
-        # Fallback to audio transcription
         yield f"data: {json.dumps({'type': 'progress', 'message': 'No subtitles found or empty, downloading audio...'})}\n\n"
         await asyncio.sleep(0.1)
         
@@ -426,7 +381,7 @@ async def stream_single_video_transcript(url: str):
         if audio_result.get("transcript"):
             transcript = clean_transcript_text(audio_result["transcript"])
             logging.info(f"Audio transcript length after cleaning: {len(transcript)}")
-            if transcript.strip():  # Ensure audio transcript is not empty
+            if transcript.strip():
                 yield f"data: {json.dumps({'type': 'progress', 'message': 'Audio transcribed, processing...'})}\n\n"
                 
                 title = audio_result.get("title", "Unknown Title")
@@ -462,9 +417,6 @@ async def stream_single_video_transcript(url: str):
         yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
 def get_transcript_via_ytdlp(url: str):
-    """
-    Extract subtitles using yt-dlp with detailed logging for debugging.
-    """
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
             cmd = [
@@ -509,12 +461,8 @@ def get_transcript_via_ytdlp(url: str):
         return {"error": str(e)}
 
 def get_transcript_via_audio(url: str):
-    """
-    Download audio and transcribe using OpenAI Whisper
-    """
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Download audio only
             cmd = [
                 'yt-dlp',
                 '--extract-audio',
@@ -527,15 +475,12 @@ def get_transcript_via_audio(url: str):
             logging.info("Downloading audio for transcription...")
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
             if result.returncode == 0:
-                # Find audio file
                 audio_files = glob.glob(f'{temp_dir}/*.mp3')
                 if audio_files:
                     audio_file = audio_files[0]
                     file_size = os.path.getsize(audio_file)
-                    # Check file size (OpenAI has 25MB limit)
                     if file_size > 25 * 1024 * 1024:  # 25MB
                         return {"error": "Audio file too large for transcription"}
-                    # Transcribe with OpenAI Whisper
                     with open(audio_file, "rb") as f:
                         logging.info("Transcribing audio with OpenAI Whisper...")
                         transcription = client.audio.transcriptions.create(
@@ -544,7 +489,6 @@ def get_transcript_via_audio(url: str):
                             response_format="text"
                         )
                     if transcription:
-                        # Format the transcript
                         formatted_text = format_transcript(transcription)
                         title = generate_title(formatted_text)
                         return {
@@ -562,17 +506,11 @@ def get_transcript_via_audio(url: str):
         return {"error": str(e)}
 
 def get_single_video_transcript(video_url: str):
-    """
-    Get transcript for a single video (used by playlist processing)
-    """
     try:
-        # Method 1: Try yt-dlp for subtitles
         result = get_transcript_via_ytdlp(video_url)
         if result.get("transcript"):
             return result
         
-        # Method 2: Try audio transcription (more resource intensive)
-        # Only attempt audio for shorter videos to avoid timeouts
         logging.info(f"No subtitles found, trying audio transcription for: {video_url}")
         audio_result = get_transcript_via_audio(video_url)
         if audio_result.get("transcript"):
@@ -586,9 +524,6 @@ def get_single_video_transcript(video_url: str):
 
 @app.get("/playlist-transcript")
 def get_playlist_transcript(playlist_id: str):
-    """
-    Enhanced playlist transcript function with better error handling
-    """
     try:
         all_text = []
         all_titles = []
@@ -628,7 +563,6 @@ def get_playlist_transcript(playlist_id: str):
                 logging.info(f"Processing video {video_count}: {video_title} (ID: {video_id})")
                 
                 try:
-                    # Get transcript for single video
                     result = get_single_video_transcript(video_url)
                     
                     if result.get("transcript"):
@@ -645,14 +579,12 @@ def get_playlist_transcript(playlist_id: str):
                     logging.warning(f"✗ Failed to fetch transcript for video '{video_title}' (ID: {video_id}): {str(e)}")
                     continue
 
-            # Check for next page
             if "nextPageToken" in data:
                 page_token = data["nextPageToken"]
                 logging.info(f"Moving to next page with token: {page_token}")
             else:
                 break
 
-        # Compile results
         if all_text:
             full_transcript = "\n\n" + "="*50 + "\n\n".join(all_text)
             logging.info(f"✓ Playlist processing complete! Successfully transcribed {success_count}/{video_count} videos")
@@ -664,14 +596,14 @@ def get_playlist_transcript(playlist_id: str):
                     "successful_transcripts": success_count,
                     "failed_transcripts": video_count - success_count,
                     "video_titles": all_titles,
-                    "failed_videos": failed_videos[:10]  # Only show first 10 failures
+                    "failed_videos": failed_videos[:10]
                 },
                 "method": "enhanced_playlist_processing"
             }
         else:
             logging.error(f"No transcripts could be extracted from any of the {video_count} videos in the playlist")
             return {
-                "error": f"No transcripts available for any of the {video_count} videos in this playlist. Videos may not have captions or clear audio.",
+                "error": f"No transcripts available for any of the {video_count} videos in this playlist.",
                 "summary": {
                     "total_videos": video_count,
                     "successful_transcripts": 0,
@@ -685,50 +617,33 @@ def get_playlist_transcript(playlist_id: str):
         return {"error": f"Unexpected error: {str(e)}"}
 
 def parse_vtt_content(content: str) -> str:
-    """
-    Parse VTT subtitle content and extract clean text
-    """
     lines = content.split('\n')
     transcript_lines = []
     
     for line in lines:
         line = line.strip()
-        # Skip VTT headers, timestamps, and empty lines
         if (line and 
             not line.startswith('WEBVTT') and 
             '-->' not in line and 
             not line.isdigit() and
             not line.startswith('NOTE') and
             not line.startswith('STYLE')):
-            
-            # Remove VTT formatting tags
             clean_line = remove_vtt_tags(line)
             if clean_line:
                 transcript_lines.append(clean_line)
     
-    # Join and format
     text = ' '.join(transcript_lines)
     return format_transcript(text)
 
 def remove_vtt_tags(text: str) -> str:
-    """
-    Remove VTT formatting tags like <c>, <i>, etc.
-    """
     import re
-    # Remove HTML-like tags
     text = re.sub(r'<[^>]+>', '', text)
-    # Remove extra whitespace
     text = re.sub(r'\s+', ' ', text).strip()
     return text
 
 def format_transcript(text: str) -> str:
-    """
-    Format transcript text into readable paragraphs
-    """
     import re
-    # Normalize whitespace
     text = re.sub(r'\s+', ' ', text).strip()
-    # Split into sentences
     sentences = re.split(r'(?<=[.!?])\s+', text)
     paragraphs = []
     current_paragraph = []
@@ -742,9 +657,6 @@ def format_transcript(text: str) -> str:
     return '\n\n'.join(paragraphs)
 
 def generate_title(text: str) -> str:
-    """
-    Generate a title using OpenAI
-    """
     try:
         title_prompt = f"Generate a short, clear title (5-8 words) for the following content:\n\n{text[:1500]}"
         response = client.chat.completions.create(
@@ -755,25 +667,19 @@ def generate_title(text: str) -> str:
         return response.choices[0].message.content.strip().replace(" ", "_")
     except Exception as e:
         logging.error(f"Error generating title: {str(e)}")
-        # Fallback to first few words
         first_words = text.split()[:6]
         return "_".join(first_words).replace(" ", "_")
 
 @app.get("/enhanced-transcript")
 def get_enhanced_transcript(url: str):
-    """
-    Enhanced transcript endpoint that handles both individual videos and playlists
-    """
     try:
         logging.info(f"Received enhanced transcript request for URL: {url}")
         
-        # Check if it's a playlist URL
         playlist_id = extract_playlist_id(url)
         if playlist_id:
             logging.info(f"Detected playlist URL with ID: {playlist_id}")
             return get_playlist_transcript(playlist_id)
         
-        # Check if it's a regular video URL
         video_id = extract_video_id(url)
         if video_id:
             logging.info(f"Detected video URL with ID: {video_id}")
@@ -804,6 +710,9 @@ def transcribe_audio(url: str, use_openai: Optional[bool] = True):
             return {"transcript": result['text']}
     except Exception as e:
         return {"error": str(e)}
+    finally:
+        if 'tmp_path' in locals():
+            os.unlink(tmp_path)
 
 @app.post("/upload")
 def upload_file(file: UploadFile = File(...)):
@@ -843,18 +752,17 @@ Write a highly engaging, well-structured, and richly informative educational art
 {chunk}
 
 Guidelines:
-- Use **Markdown headings** to clearly structure sections and improve readability.
-- Use smooth, storytelling transitions between sections.
-- Explain all technical concepts clearly, using real-world metaphors, analogies, and examples wherever helpful.
-- Include inline code explanations when code is referenced.
+- Use **Markdown headings** (`##` for main sections, `###` for subsections) to clearly structure content.
+- Ensure headings are meaningful and not empty; avoid standalone `#` or `##` without text.
+- Write concise paragraphs (3-5 sentences each) with smooth, storytelling transitions between sections.
+- Use proper list formatting: `-` for unordered lists, `1.` for ordered lists, with consistent indentation.
+- Explain technical concepts clearly using real-world metaphors, analogies, and examples.
+- Include inline code explanations (e.g., `code`) when referencing code.
 - Break down complex topics into approachable, logically flowing paragraphs.
-- Avoid lists unless necessary — prefer narrative and paragraph-style teaching.
-- The tone should be professional, approachable, and slightly conversational — like a great teacher guiding a curious learner.
-- Continue from prior section naturally, as if writing part of a larger publication.
-- Do NOT include an introduction or conclusion unless this is the start or end of the article.
-- Your goal is to create a ready-to-publish educational piece that is insightful, clear, and enjoyable to read.
-
-Avoid motivational filler or overuse of metaphors. Keep the writing focused, informative, and highly engaging for intelligent general readers.
+- Maintain a professional, approachable, and slightly conversational tone, like a great teacher guiding a learner.
+- Continue from prior sections naturally, as if writing part of a larger publication.
+- Avoid motivational filler, excessive metaphors, or redundant whitespace.
+- Ensure the output is ready-to-publish, highly engaging, and clear for intelligent general readers.
 """
             stream = client.chat.completions.create(
                 model="gpt-3.5-turbo",
@@ -883,32 +791,24 @@ async def qna_stream(request: Request):
     def chunk_stream():
         for chunk in chunks:
             prompt = f"""
-You are an expert AI tutor creating study material for learners who want to master complex technical concepts.
+You are an expert AI tutor creating study material for learners mastering complex technical concepts.
 
-Based on the following transcript, generate a thoughtful set of educational **question-and-answer pairs** that help reinforce key ideas:
+Based on the following transcript, generate a thoughtful set of educational **question-and-answer pairs**:
 
 {chunk}
 
 Guidelines:
-- Each **question** should probe a meaningful technical concept, mechanism, use case, or decision-making point in the content.
-- Each **answer** should be detailed, educational, and include clear examples, analogies, or simple technical explanations to aid understanding.
-- Format the Q&A using **Markdown** — use `### Question` and `**Answer:**` for clean structure.
-- Avoid shallow or trivial questions. Focus on depth, clarity, and real-world relevance.
-- Do NOT refer to the original speaker, transcript, or video.
-- Avoid quiz-style or trivia tone — aim for a professional, learner-friendly teaching style.
-- Make the material engaging and insightful enough to be part of a study guide or interview prep resource.
-- ❌ Do NOT use first-person ("I", "we"), second-person ("you"), or narrative phrases like "let's explore" or "our journey".
-- ✅ Use **impersonal, objective language**. Focus on clear technical statements using passive or neutral voice.
-- Write as if the content is being published in a technical handbook or formal exam prep guide.
-- Make the writing engaging and thought-provoking like a great teacher.
-- Avoid filler and narrative clichés like "Let's embark" or "This journey shows us…".
-- Use vivid, real-world analogies to explain abstract ideas. For example, compare agents to detectives, tools to Swiss army knives, or tracing to surveillance cameras.
-- Use detailed walkthroughs to explain how things work. Show how an agent thinks step-by-step like debugging logic.
-- Make every paragraph teach something — avoid summaries that merely rephrase.
-- Do NOT use first-person ("we", "let's", "I"). Avoid vague phrases like "the conversation explored…".
-- The tone should feel like a deep but clear technical guide that could be published in a professional learning platform.
-
-Your goal is to create a series of high-quality, standalone Q&A entries that someone could learn from without seeing the original transcript.
+- Format each Q&A pair using **Markdown**: `### Question` for questions, `**Answer:**` for answers.
+- Write concise questions (1-2 sentences) probing meaningful technical concepts, mechanisms, or use cases.
+- Provide detailed answers (3-5 sentences) with clear examples, analogies, or technical explanations.
+- Ensure each Q&A pair is separated by a blank line for clarity.
+- Avoid duplicate questions or shallow/trivial content; focus on depth and real-world relevance.
+- Use impersonal, objective language; avoid first-person ("I", "we") or second-person ("you").
+- Maintain a professional, learner-friendly tone suitable for a technical handbook or exam prep guide.
+- Use vivid analogies (e.g., agents as detectives, tools as Swiss army knives) to explain abstract ideas.
+- Provide detailed walkthroughs for complex processes, like step-by-step debugging logic.
+- Avoid narrative clichés (e.g., "let's explore") or excessive whitespace.
+- Ensure the output is engaging, insightful, and ready for publication on a professional learning platform.
 """
             stream = client.chat.completions.create(
                 model="gpt-3.5-turbo",
@@ -987,7 +887,6 @@ Summary:
     try:
         questions = json.loads(text)
     except Exception:
-        # fallback: parse manually if LLM didn't return JSON
         questions = []
         for line in text.split("\n"):
             if line.strip().startswith("{") and "topic" in line and "question" in line:
