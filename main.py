@@ -730,6 +730,47 @@ def upload_file(file: UploadFile = File(...)):
     except Exception as e:
         return {"error": str(e)}
 
+class VideoInput(BaseModel):
+    transcript: str
+    url: str
+
+@app.post("/summarize-video")
+async def summarize_video(input: VideoInput):
+    try:
+        logging.info(f"Processing video URL: {input.url}, transcript length: {len(input.transcript)}")
+        
+        summary = "No summary available."
+        
+        if input.transcript:
+            # Truncate transcript to avoid token limits (approx. 4000 tokens ~ 10,000 chars)
+            truncated_transcript = input.transcript[:10000]
+            logging.info(f"Truncated transcript length: {len(truncated_transcript)}")
+            
+            # Call OpenAI with structured prompt
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant that summarizes videos."},
+                    {"role": "user", "content": (
+                        f"Based on this transcript excerpt: '{truncated_transcript}...', "
+                        f"provide a 3-4 sentence summary in plain text."
+                        f"In the summary, do not start with 'The text' or 'The excerpt' or 'The excerpt discusses' or 'transcript excerpt discusses' or 'video discusses' mention anything about speaker, instead generalize the summary."
+                    )}
+                ],
+                max_tokens=100,
+                temperature=0.7
+            )
+            
+            # Extract summary
+            summary = response.choices[0].message.content.strip() or "No summary available."
+            logging.info(f"OpenAI summary: {summary[:200]}...")
+        
+        logging.info(f"Returning summary: {summary[:50]}...")
+        return {"summary": summary}
+    except Exception as e:
+        logging.error(f"Error in summarize-video: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Error generating video summary: {str(e)}")    
+
 @app.post("/summarize-stream")
 async def summarize_stream(request: Request):
     body = await request.json()
