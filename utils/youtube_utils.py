@@ -92,7 +92,7 @@ def generate_title(text: str) -> str:
             messages=[{"role": "user", "content": title_prompt}],
             max_tokens=20
         )
-        return response.choices[0].message.content.strip().replace(" ", "_")
+        return response.choices[0].message.content.strip()
     except Exception as e:
         logging.error(f"Error generating title: {str(e)}")
         first_words = text.split()[:6]
