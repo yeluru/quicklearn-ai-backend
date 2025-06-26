@@ -5,6 +5,7 @@ import tempfile
 import logging
 from openai import OpenAI
 from config import OPENAI_API_KEY, YOUTUBE_API_KEY
+import math
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -45,6 +46,34 @@ def get_transcript_via_ytdlp(url: str) -> dict:
         logging.error(f"yt-dlp error: {str(e)}")
         return {"error": str(e)}
 
+def split_audio_ffmpeg(audio_file, max_size=24*1024*1024):
+    file_size = os.path.getsize(audio_file)
+    if file_size <= max_size:
+        return [audio_file]
+    # Get duration in seconds
+    result = subprocess.run(
+        ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of',
+         'default=noprint_wrappers=1:nokey=1', audio_file],
+        capture_output=True, text=True
+    )
+    duration = float(result.stdout.strip())
+    # Estimate number of chunks
+    num_chunks = math.ceil(file_size / max_size)
+    chunk_duration = duration / num_chunks
+    chunk_paths = []
+    for i in range(num_chunks):
+        start = i * chunk_duration
+        chunk_path = f"{audio_file}_chunk_{i}.mp3"
+        cmd = [
+            'ffmpeg', '-y', '-i', audio_file,
+            '-ss', str(int(start)),
+            '-t', str(int(chunk_duration)),
+            '-acodec', 'copy', chunk_path
+        ]
+        subprocess.run(cmd, capture_output=True)
+        chunk_paths.append(chunk_path)
+    return chunk_paths
+
 def get_transcript_via_audio(url: str) -> dict:
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -63,18 +92,22 @@ def get_transcript_via_audio(url: str) -> dict:
                 audio_files = glob.glob(f'{temp_dir}/*.mp3')
                 if audio_files:
                     audio_file = audio_files[0]
-                    file_size = os.path.getsize(audio_file)
-                    if file_size > 25 * 1024 * 1024:  # 25MB
-                        return {"error": "Audio file too large for transcription"}
-                    with open(audio_file, "rb") as f:
-                        logging.info("Transcribing audio with OpenAI Whisper...")
-                        transcription = client.audio.transcriptions.create(
-                            model="whisper-1",
-                            file=f,
-                            response_format="text"
-                        )
-                    if transcription:
-                        return {"content": transcription}
+                    max_size = 24 * 1024 * 1024  # 24MB for safety
+                    chunk_paths = split_audio_ffmpeg(audio_file, max_size)
+                    full_transcript = ""
+                    for chunk_path in chunk_paths:
+                        with open(chunk_path, "rb") as f:
+                            logging.info(f"Transcribing audio chunk {chunk_path} with OpenAI Whisper...")
+                            transcription = client.audio.transcriptions.create(
+                                model="whisper-1",
+                                file=f,
+                                response_format="text"
+                            )
+                        if transcription:
+                            full_transcript += transcription + "\n"
+                        if chunk_path != audio_file:
+                            os.remove(chunk_path)
+                    return {"content": full_transcript}
             logging.error(f"Audio download failed: {result.stderr}")
             return {"error": "Failed to download audio"}
     except subprocess.TimeoutExpired:
@@ -92,7 +125,12 @@ def generate_title(text: str) -> str:
             messages=[{"role": "user", "content": title_prompt}],
             max_tokens=20
         )
-        return response.choices[0].message.content.strip()
+        content = response.choices[0].message.content
+        if content:
+            return content.strip()
+        else:
+            first_words = text.split()[:6]
+            return "_".join(first_words).replace(" ", "_")
     except Exception as e:
         logging.error(f"Error generating title: {str(e)}")
         first_words = text.split()[:6]
