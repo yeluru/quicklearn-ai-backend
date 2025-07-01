@@ -10,3 +10,5 @@ yt-dlp
 whisper  # if using local Whisper model
 python-dotenv
 ffmpeg-python
+pytest
+httpx

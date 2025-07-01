@@ -604,7 +604,8 @@ def get_playlist_transcript(playlist_id: str):
                             # Stream the video header and transcript
                             yield f"data: {json.dumps({'type': 'transcript_chunk', 'content': video_header})}\n\n"
                             yield f"data: {json.dumps({'type': 'transcript_chunk', 'content': transcript_text})}\n\n"
-                            yield f"data: {json.dumps({'type': 'transcript_chunk', 'content': '\n\n' + '='*50 + '\n\n'})}\n\n"
+                            chunk = '\n\n' + '='*50 + '\n\n'
+                            yield f"data: {json.dumps({'type': 'transcript_chunk', 'content': chunk})}\n\n"
                         else:
                             failed_videos.append({"title": video_title, "id": video_id, "error": result.get("error", "Unknown error")})
                             logging.warning(f"✗ Could not get transcript for: {video_title} - {result.get('error', 'Unknown error')}")
@@ -686,7 +687,8 @@ def stream_playlist_generator(playlist_id: str):
                         # Stream the video header and transcript
                         yield f"data: {json.dumps({'type': 'transcript_chunk', 'content': video_header})}\n\n"
                         yield f"data: {json.dumps({'type': 'transcript_chunk', 'content': transcript_text})}\n\n"
-                        yield f"data: {json.dumps({'type': 'transcript_chunk', 'content': '\n\n' + '='*50 + '\n\n'})}\n\n"
+                        chunk = '\n\n' + '='*50 + '\n\n'
+                        yield f"data: {json.dumps({'type': 'transcript_chunk', 'content': chunk})}\n\n"
                     else:
                         failed_videos.append({"title": video_title, "id": video_id, "error": result.get("error", "Unknown error")})
                         logging.warning(f"✗ Could not get transcript for: {video_title} - {result.get('error', 'Unknown error')}")
