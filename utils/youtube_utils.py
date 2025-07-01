@@ -46,6 +46,52 @@ def get_transcript_via_ytdlp(url: str) -> dict:
         logging.error(f"yt-dlp error: {str(e)}")
         return {"error": str(e)}
 
+def split_mp4_ffmpeg(mp4_file, max_size=24*1024*1024):
+    """
+    Split MP4 file into MP3 chunks for Whisper transcription.
+    """
+    file_size = os.path.getsize(mp4_file)
+    if file_size <= max_size:
+        return [mp4_file]
+    
+    # Get duration in seconds
+    result = subprocess.run(
+        ['ffprobe', '-v', 'error', '-show_entries', 'format=duration', '-of',
+         'default=noprint_wrappers=1:nokey=1', mp4_file],
+        capture_output=True, text=True
+    )
+    duration = float(result.stdout.strip())
+    
+    # Estimate number of chunks
+    num_chunks = math.ceil(file_size / max_size)
+    chunk_duration = duration / num_chunks
+    chunk_paths = []
+    
+    for i in range(num_chunks):
+        start = i * chunk_duration
+        chunk_path = f"{mp4_file}_chunk_{i}.mp3"
+        
+        # Convert MP4 chunk to MP3 for Whisper
+        cmd = [
+            'ffmpeg', '-y', '-i', mp4_file,
+            '-ss', str(int(start)),
+            '-t', str(int(chunk_duration)),
+            '-vn',  # No video
+            '-acodec', 'libmp3lame',  # Use MP3 codec
+            '-ar', '16000',  # Sample rate
+            '-ac', '1',  # Mono audio
+            '-b:a', '128k',  # Bitrate
+            chunk_path
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            chunk_paths.append(chunk_path)
+        else:
+            logging.error(f"Failed to create chunk {i}: {result.stderr}")
+    
+    return chunk_paths
+
 def split_audio_ffmpeg(audio_file, max_size=24*1024*1024):
     file_size = os.path.getsize(audio_file)
     if file_size <= max_size:
@@ -68,10 +114,17 @@ def split_audio_ffmpeg(audio_file, max_size=24*1024*1024):
             'ffmpeg', '-y', '-i', audio_file,
             '-ss', str(int(start)),
             '-t', str(int(chunk_duration)),
-            '-acodec', 'copy', chunk_path
+            '-acodec', 'libmp3lame',  # Use MP3 codec instead of copy
+            '-ar', '16000',  # Sample rate
+            '-ac', '1',  # Mono audio
+            '-b:a', '128k',  # Bitrate
+            chunk_path
         ]
-        subprocess.run(cmd, capture_output=True)
-        chunk_paths.append(chunk_path)
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            chunk_paths.append(chunk_path)
+        else:
+            logging.error(f"Failed to create chunk {i}: {result.stderr}")
     return chunk_paths
 
 def get_transcript_via_audio(url: str) -> dict:

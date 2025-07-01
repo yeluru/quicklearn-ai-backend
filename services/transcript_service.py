@@ -4,18 +4,273 @@ import asyncio
 import json
 import requests
 import io
+import tempfile
+import os
 from PyPDF2 import PdfReader
 from docx import Document
-from config import YOUTUBE_API_KEY
+from config import YOUTUBE_API_KEY, OPENAI_API_KEY
 from utils.url_utils import extract_video_id, extract_playlist_id, normalize_youtube_url
 from utils.text_utils import clean_transcript_text, parse_vtt_content, format_transcript
-from utils.youtube_utils import get_transcript_via_ytdlp, get_transcript_via_audio, generate_title, split_audio_ffmpeg
+from utils.youtube_utils import get_transcript_via_ytdlp, get_transcript_via_audio, generate_title, split_audio_ffmpeg, split_mp4_ffmpeg
 from exceptions.custom_exceptions import TranscriptError
+from openai import OpenAI
 import logging
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 router = APIRouter()
+client = OpenAI(api_key=OPENAI_API_KEY)
+
+def is_audio_file_url(url: str) -> bool:
+    """Check if URL points to a direct audio file"""
+    try:
+        url_lower = url.lower()
+        # Check for common audio file extensions (including MP4 which can contain audio)
+        audio_extensions = ['.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac', '.wma', '.aiff', '.mp4']
+        return any(ext in url_lower for ext in audio_extensions)
+    except:
+        return False
+
+def is_audio_platform_url(url: str) -> bool:
+    """Check if URL is from an audio streaming platform"""
+    try:
+        url_lower = url.lower()
+        audio_platforms = [
+            'spotify.com', 'soundcloud.com', 'apple.co', 'music.apple.com',
+            'deezer.com', 'tidal.com', 'amazon.com/music', 'youtube.com/music',
+            'bandcamp.com', 'audiomack.com', 'reverbnation.com'
+        ]
+        return any(platform in url_lower for platform in audio_platforms)
+    except:
+        return False
+
+async def stream_audio_file_transcript(url: str):
+    """Stream transcript from direct audio file URL"""
+    try:
+        yield f"data: {json.dumps({'type': 'progress', 'message': 'Downloading audio file...'})}\n\n"
+        await asyncio.sleep(0.1)
+        
+        # Download the audio file with proper headers and redirect handling
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        
+        # First, try to get the actual download URL for services like Dropbox
+        if 'dropbox.com' in url.lower():
+            # For Dropbox, we need to modify the URL to force download
+            if '?dl=0' in url:
+                url = url.replace('?dl=0', '?dl=1')
+            elif '&dl=0' in url:
+                url = url.replace('&dl=0', '&dl=1')
+            else:
+                url += '&dl=1' if '?' in url else '?dl=1'
+        elif 'drive.google.com' in url.lower():
+            # For Google Drive, convert to direct download
+            if '/file/d/' in url:
+                file_id = url.split('/file/d/')[1].split('/')[0]
+                url = f"https://drive.google.com/uc?export=download&id={file_id}"
+            elif '/open?' in url:
+                # Handle shared links with open parameter
+                file_id = url.split('id=')[1].split('&')[0]
+                url = f"https://drive.google.com/uc?export=download&id={file_id}"
+            elif '/view?' in url:
+                # Handle shared links with view parameter
+                file_id = url.split('id=')[1].split('&')[0]
+                url = f"https://drive.google.com/uc?export=download&id={file_id}"
+            
+            # Add additional headers for Google Drive
+            headers.update({
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+            })
+        elif '1drv.ms' in url.lower() or 'onedrive.live.com' in url.lower():
+            # For OneDrive, we need to handle redirects properly
+            # The URL will be handled by the redirect following
+            pass
+        elif 'box.com' in url.lower():
+            # For Box, try to get direct download
+            if '/s/' in url:
+                # Convert shared link to direct download
+                url = url.replace('/s/', '/s/') + '?dl=1'
+        
+        response = await asyncio.to_thread(requests.get, url, stream=True, timeout=60, headers=headers, allow_redirects=True)
+        response.raise_for_status()
+        
+        # Handle Google Drive confirmation page for large files
+        if 'drive.google.com' in url.lower() and 'text/html' in response.headers.get('content-type', '').lower():
+            # Check if we got a confirmation page
+            content = b''
+            for chunk in response.iter_content(chunk_size=8192):
+                content += chunk
+            content_str = content.decode('utf-8', errors='ignore')
+            
+            if 'confirm=' in content_str:
+                # Extract the confirmation token
+                import re
+                confirm_match = re.search(r'confirm=([^&"]+)', content_str)
+                if confirm_match:
+                    confirm_token = confirm_match.group(1)
+                    # Make the actual download request with the confirmation token
+                    download_url = f"{url}&confirm={confirm_token}"
+                    response = await asyncio.to_thread(requests.get, download_url, stream=True, timeout=60, headers=headers, allow_redirects=True)
+                    response.raise_for_status()
+        
+        # Check if we got an actual audio file
+        content_type = response.headers.get('content-type', '').lower()
+        if 'text/html' in content_type or 'text/plain' in content_type:
+            # We got an HTML page instead of an audio file
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Unable to access audio file directly. Please ensure the URL provides direct file access.'})}\n\n"
+            return
+        
+        # Get file extension from URL or content-type
+        file_extension = 'mp3'  # Default
+        if '.' in url:
+            file_extension = url.split('.')[-1].lower().split('?')[0]  # Remove query params
+        elif 'audio/' in content_type:
+            # Extract extension from content-type
+            if 'audio/mpeg' in content_type or 'audio/mp3' in content_type:
+                file_extension = 'mp3'
+            elif 'audio/wav' in content_type:
+                file_extension = 'wav'
+            elif 'audio/mp4' in content_type or 'audio/m4a' in content_type:
+                file_extension = 'm4a'
+            elif 'audio/ogg' in content_type:
+                file_extension = 'ogg'
+            elif 'audio/flac' in content_type:
+                file_extension = 'flac'
+        
+        # Validate file extension
+        valid_extensions = ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac', 'wma', 'aiff', 'mp4', 'mpeg', 'mpga', 'oga', 'webm']
+        if file_extension not in valid_extensions:
+            file_extension = 'mp3'  # Default to mp3 if invalid
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_extension}") as temp_file:
+            # Download the file
+            total_size = 0
+            for chunk in response.iter_content(chunk_size=8192):
+                temp_file.write(chunk)
+                total_size += len(chunk)
+            
+            temp_file_path = temp_file.name
+        
+        try:
+            yield f"data: {json.dumps({'type': 'progress', 'message': f'Processing audio file ({total_size // 1024 // 1024}MB)...'})}\n\n"
+            await asyncio.sleep(0.1)
+            
+            # Check file size and chunk if necessary
+            file_size = os.path.getsize(temp_file_path)
+            max_size = 24 * 1024 * 1024  # 24MB for safety
+            
+            if file_size > max_size:
+                yield f"data: {json.dumps({'type': 'progress', 'message': 'Large file detected, chunking for processing...'})}\n\n"
+                await asyncio.sleep(0.1)
+                
+                # Use appropriate chunking method
+                if file_extension in ['mp4', 'm4a']:
+                    chunk_paths = split_mp4_ffmpeg(temp_file_path, max_size)
+                else:
+                    chunk_paths = split_audio_ffmpeg(temp_file_path, max_size)
+                
+                full_transcript = ""
+                
+                for i, chunk_path in enumerate(chunk_paths):
+                    try:
+                        yield f"data: {json.dumps({'type': 'progress', 'message': f'Transcribing chunk {i+1}/{len(chunk_paths)}...'})}\n\n"
+                        await asyncio.sleep(0.1)
+                        
+                        with open(chunk_path, "rb") as audio_file:
+                            transcription = await asyncio.to_thread(
+                                client.audio.transcriptions.create,
+                                model="whisper-1",
+                                file=audio_file,
+                                response_format="text"
+                            )
+                        
+                        if transcription:
+                            full_transcript += transcription + "\n"
+                            # Stream the chunk
+                            chunk_size = 400
+                            words = transcription.split(' ')
+                            current_chunk = ""
+                            
+                            for word in words:
+                                if len(current_chunk + word + " ") <= chunk_size:
+                                    current_chunk += word + " "
+                                else:
+                                    if current_chunk.strip():
+                                        yield f"data: {json.dumps({'type': 'transcript_chunk', 'content': current_chunk.strip()})}\n\n"
+                                        await asyncio.sleep(0.03)
+                                    current_chunk = word + " "
+                            
+                            if current_chunk.strip():
+                                yield f"data: {json.dumps({'type': 'transcript_chunk', 'content': current_chunk.strip()})}\n\n"
+                        
+                        # Clean up chunk file
+                        if chunk_path != temp_file_path:
+                            os.remove(chunk_path)
+                            
+                    except Exception as chunk_error:
+                        logging.error(f"Error transcribing chunk {i+1}: {str(chunk_error)}")
+                        if chunk_path != temp_file_path and os.path.exists(chunk_path):
+                            os.remove(chunk_path)
+                
+                if full_transcript.strip():
+                    title = await asyncio.to_thread(generate_title, full_transcript)
+                    yield f"data: {json.dumps({'type': 'title', 'content': title})}\n\n"
+                    yield f"data: {json.dumps({'type': 'complete', 'method': 'audio_file'})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'type': 'error', 'message': 'No transcript generated from audio file'})}\n\n"
+                    
+            else:
+                # Small file, transcribe directly
+                yield f"data: {json.dumps({'type': 'progress', 'message': 'Transcribing audio file...'})}\n\n"
+                await asyncio.sleep(0.1)
+                
+                with open(temp_file_path, "rb") as audio_file:
+                    transcription = await asyncio.to_thread(
+                        client.audio.transcriptions.create,
+                        model="whisper-1",
+                        file=audio_file,
+                        response_format="text"
+                    )
+                
+                if transcription:
+                    title = await asyncio.to_thread(generate_title, transcription)
+                    yield f"data: {json.dumps({'type': 'title', 'content': title})}\n\n"
+                    
+                    # Stream the transcript
+                    chunk_size = 400
+                    words = transcription.split(' ')
+                    current_chunk = ""
+                    
+                    for word in words:
+                        if len(current_chunk + word + " ") <= chunk_size:
+                            current_chunk += word + " "
+                        else:
+                            if current_chunk.strip():
+                                yield f"data: {json.dumps({'type': 'transcript_chunk', 'content': current_chunk.strip()})}\n\n"
+                                await asyncio.sleep(0.03)
+                            current_chunk = word + " "
+                    
+                    if current_chunk.strip():
+                        yield f"data: {json.dumps({'type': 'transcript_chunk', 'content': current_chunk.strip()})}\n\n"
+                    
+                    yield f"data: {json.dumps({'type': 'complete', 'method': 'audio_file'})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'type': 'error', 'message': 'No transcript generated from audio file'})}\n\n"
+                    
+        finally:
+            # Clean up temporary file
+            if os.path.exists(temp_file_path):
+                os.unlink(temp_file_path)
+                
+    except Exception as e:
+        logging.error(f"Error in audio file streaming: {str(e)}")
+        yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
 
 async def stream_single_video_transcript(url: str):
     try:
@@ -187,6 +442,33 @@ async def stream_video_transcript(request: Request):
         
         logging.info(f"Starting streaming transcript for URL: {url}")
         
+        # Check if it's a direct audio file URL
+        if is_audio_file_url(url):
+            logging.info(f"Detected direct audio file URL: {url}")
+            return StreamingResponse(
+                stream_audio_file_transcript(url),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "Access-Control-Allow-Origin": "*",
+                }
+            )
+        
+        # Check if it's an audio platform URL
+        if is_audio_platform_url(url):
+            logging.info(f"Detected audio platform URL: {url}")
+            return StreamingResponse(
+                stream_audio_file_transcript(url),
+                media_type="text/event-stream",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "Access-Control-Allow-Origin": "*",
+                }
+            )
+        
+        # Check for YouTube playlist
         playlist_id = extract_playlist_id(url)
         if playlist_id:
             logging.info(f"Detected YouTube playlist ID: {playlist_id}")
@@ -214,7 +496,7 @@ async def stream_video_transcript(request: Request):
         raise e
     except Exception as e:
         logging.error(f"Error setting up transcript stream: {str(e)}")
-        raise TranscriptError(str(e), status_code=500)
+        raise TranscriptError(str(e))
 
 @router.get("/single")
 def get_youtube_transcript(url: str):
@@ -434,7 +716,94 @@ def stream_playlist_generator(playlist_id: str):
 async def upload_file(file: UploadFile = File(...)):
     try:
         contents = await file.read()
-        if file and file.filename and file.filename.endswith(".pdf"):
+        
+        # Handle audio files with audio transcription
+        audio_extensions = ['.mp4', '.mp3', '.wav', '.m4a', '.aac', '.ogg', '.flac', '.wma', '.aiff']
+        if file and file.filename and any(file.filename.lower().endswith(ext) for ext in audio_extensions):
+            import tempfile
+            import os
+            from openai import OpenAI
+            from config import OPENAI_API_KEY
+            
+            client = OpenAI(api_key=OPENAI_API_KEY)
+            
+            # Get the file extension
+            file_extension = os.path.splitext(file.filename.lower())[1]
+            
+            # Save audio file to temporary file
+            with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as temp_file:
+                temp_file.write(contents)
+                temp_file_path = temp_file.name
+            
+            try:
+                # Check file size and chunk if necessary
+                file_size = os.path.getsize(temp_file_path)
+                max_size = 24 * 1024 * 1024  # 24MB for safety
+                
+                if file_size > max_size:
+                    logging.info(f"Audio file is large ({file_size} bytes), chunking for transcription")
+                    try:
+                        # Use different chunking methods based on file type
+                        if file_extension in ['.mp4', '.m4a']:
+                            chunk_paths = split_mp4_ffmpeg(temp_file_path, max_size)
+                        else:  # All other audio formats
+                            chunk_paths = split_audio_ffmpeg(temp_file_path, max_size)
+                        
+                        full_transcript = ""
+                        
+                        for i, chunk_path in enumerate(chunk_paths):
+                            try:
+                                with open(chunk_path, "rb") as audio_file:
+                                    logging.info(f"Transcribing audio chunk {i+1}/{len(chunk_paths)}: {chunk_path}")
+                                    transcription = client.audio.transcriptions.create(
+                                        model="whisper-1",
+                                        file=audio_file,
+                                        response_format="text"
+                                    )
+                                if transcription:
+                                    full_transcript += transcription + "\n"
+                                # Clean up chunk file
+                                if chunk_path != temp_file_path:
+                                    os.remove(chunk_path)
+                            except Exception as chunk_error:
+                                logging.error(f"Error transcribing chunk {i+1}: {str(chunk_error)}")
+                                # Continue with other chunks
+                                if chunk_path != temp_file_path and os.path.exists(chunk_path):
+                                    os.remove(chunk_path)
+                        
+                        text = full_transcript if full_transcript else "No transcript available."
+                    except Exception as chunking_error:
+                        logging.error(f"Error during chunking: {str(chunking_error)}")
+                        # Fallback to direct transcription (might fail for large files)
+                        with open(temp_file_path, "rb") as audio_file:
+                            logging.info(f"Fallback: Transcribing audio file directly: {file.filename}")
+                            transcription = client.audio.transcriptions.create(
+                                model="whisper-1",
+                                file=audio_file,
+                                response_format="text"
+                            )
+                        text = transcription if transcription else "No transcript available."
+                else:
+                    # Small file, transcribe directly
+                    with open(temp_file_path, "rb") as audio_file:
+                        logging.info(f"Transcribing audio file: {file.filename}")
+                        transcription = client.audio.transcriptions.create(
+                            model="whisper-1",
+                            file=audio_file,
+                            response_format="text"
+                        )
+                    text = transcription if transcription else "No transcript available."
+                
+                title = generate_title(text)
+                return {"transcript": text, "title": title}
+                
+            finally:
+                # Clean up temporary file
+                if os.path.exists(temp_file_path):
+                    os.unlink(temp_file_path)
+        
+        # Handle other file types
+        elif file and file.filename and file.filename.endswith(".pdf"):
             reader = PdfReader(io.BytesIO(contents))
             text = "\n".join([page.extract_text() for page in reader.pages if page.extract_text()])
         elif file and file.filename and file.filename.endswith(".docx"):
@@ -442,6 +811,7 @@ async def upload_file(file: UploadFile = File(...)):
             text = "\n".join([para.text for para in doc.paragraphs])
         else:
             text = contents.decode("utf-8")
+        
         title = generate_title(text)
         return {"transcript": text, "title": title}
     except Exception as e:

@@ -6,6 +6,7 @@ from config import OPENAI_API_KEY
 from exceptions.custom_exceptions import SummaryError
 import logging
 import json
+import openai
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -149,3 +150,32 @@ Guidelines:
     except Exception as e:
         logging.error(f"Error in qna-stream: {str(e)}")
         raise SummaryError(str(e))
+
+@router.post('/extract')
+async def extract_key_info(request: Request):
+    data = await request.json()
+    text = data.get('text', '')
+    if not text:
+        return JSONResponse({'error': 'No text provided.'}, status_code=400)
+
+    prompt = (
+        "Analyze the following text and extract the most relevant structured information for its context. "
+        "- If it is a job description, extract skills, technologies, and requirements. "
+        "- If it is an article, extract key entities, dates, organizations, and people. "
+        "- If it is a story, extract main characters, events, and locations. "
+        "- For any other text, extract the most important facts, entities, or concepts. "
+        "For each extracted item, provide a brief explanation in plain English. "
+        "Return the results as a list of items with explanations.\n\nText:\n" + text + "\n\nExtracted Information:"
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=600,
+            temperature=0.3,
+        )
+        result = response.choices[0].message.content
+        return {"extracted": result}
+    except Exception as e:
+        return JSONResponse({'error': str(e)}, status_code=500)

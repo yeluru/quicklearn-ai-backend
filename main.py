@@ -24,3 +24,7 @@ app.include_router(chat_router, prefix="/chat")
 @app.get("/")
 async def root():
     return {"message": "Welcome to QuickLearn.AI Backend"}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "service": "QuickLearn.AI Backend"}
