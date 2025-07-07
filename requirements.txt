@@ -12,3 +12,8 @@ python-dotenv
 ffmpeg-python
 pytest
 httpx
+newspaper3k
+beautifulsoup4
+lxml
+readability-lxml
+pdfminer.six

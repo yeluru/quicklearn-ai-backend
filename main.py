@@ -1,9 +1,12 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from config import ALLOWED_ORIGINS
 from services.transcript_service import router as transcript_router
 from services.summary_service import router as summary_router
 from services.chat_service import router as chat_router
+from services.website_scraper_service import scrape_website
+from fastapi.responses import JSONResponse
+import logging
 
 app = FastAPI()
 
@@ -28,3 +31,17 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "QuickLearn.AI Backend"}
+
+@app.post("/scrape")
+async def scrape_website_endpoint(request: Request):
+    data = await request.json()
+    url = data.get("url")
+    if not url:
+        logging.error("No URL provided to /scrape endpoint.")
+        return JSONResponse({"error": "No URL provided."}, status_code=400)
+    try:
+        transcript = scrape_website(url)
+        return {"transcript": transcript}
+    except Exception as e:
+        logging.error(f"Error in /scrape endpoint for {url}: {e}")
+        return JSONResponse({"error": str(e)}, status_code=500)
