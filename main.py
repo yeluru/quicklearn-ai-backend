@@ -41,7 +41,13 @@ async def scrape_website_endpoint(request: Request):
         return JSONResponse({"error": "No URL provided."}, status_code=400)
     try:
         transcript = scrape_website(url)
+        logging.debug(f"Returning transcript (first 500 chars): {transcript[:500]}")
         return {"transcript": transcript}
+    except ValueError as ve:
+        logging.error(f"User error in /scrape endpoint for {url}: {ve}")
+        logging.debug(f"Returning error: {str(ve)}")
+        return JSONResponse({"error": str(ve)}, status_code=400)
     except Exception as e:
         logging.error(f"Error in /scrape endpoint for {url}: {e}")
-        return JSONResponse({"error": str(e)}, status_code=500)
+        logging.debug(f"Returning generic error for {url}")
+        return JSONResponse({"error": "An unexpected error occurred while scraping the website."}, status_code=500)

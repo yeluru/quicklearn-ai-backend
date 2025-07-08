@@ -8,6 +8,10 @@ import logging
 import PyPDF2
 import io
 import bs4
+import asyncio
+from playwright.sync_api import sync_playwright
+from playwright.async_api import async_playwright
+import nest_asyncio
 
 VIDEO_PATTERNS = [
     r'youtube\.com/watch\?v=[\w-]+',
@@ -155,6 +159,60 @@ def try_url_variants(base_url):
         logging.error(f"All URL variants failed for {base_url}: {last_error}")
     return None
 
+def is_text_response(response):
+    content_type = response.headers.get('content-type', '').lower()
+    return 'text/html' in content_type or 'application/xhtml+xml' in content_type or 'text/plain' in content_type
+
+def is_mostly_binary(text, threshold=0.3):
+    # Returns True if more than threshold fraction of characters are non-printable
+    if not text:
+        return True
+    non_printable = sum(1 for c in text if ord(c) < 9 or (ord(c) > 13 and ord(c) < 32) or ord(c) > 126)
+    return (non_printable / len(text)) > threshold
+
+def scrape_website_playwright(url):
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(url, timeout=30000)
+            # Wait for network to be idle or a reasonable time
+            page.wait_for_load_state('networkidle', timeout=15000)
+            # Extract visible text from the body
+            content = page.inner_text('body')
+            browser.close()
+            # Clean up excessive whitespace
+            content = '\n'.join([line.strip() for line in content.splitlines() if line.strip()])
+            return content
+    except Exception as e:
+        logging.error(f"Playwright scraping failed for {url}: {e}")
+        return ""
+
+async def scrape_website_playwright_async(url):
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True)
+            page = await browser.new_page()
+            await page.goto(url, timeout=30000)
+            await page.wait_for_load_state('networkidle', timeout=15000)
+            content = await page.inner_text('body')
+            await browser.close()
+            content = '\n'.join([line.strip() for line in content.splitlines() if line.strip()])
+            return content
+    except Exception as e:
+        logging.error(f"Playwright scraping failed for {url}: {e}")
+        return ""
+
+def run_async_playwright(coro):
+    try:
+        loop = asyncio.get_running_loop()
+        if loop.is_running():
+            nest_asyncio.apply()
+            return loop.run_until_complete(coro)
+    except RuntimeError:
+        pass
+    return asyncio.run(coro)
+
 def scrape_website(url, max_depth=2, max_pages=10):
     try:
         if not url.startswith('http'):
@@ -167,6 +225,7 @@ def scrape_website(url, max_depth=2, max_pages=10):
         transcript_sections = []
         video_links = set()
         pages_scraped = 0
+        used_playwright = False
         while to_visit and pages_scraped < max_pages:
             current_url, depth = to_visit.pop(0)
             if current_url in visited or depth > max_depth:
@@ -177,6 +236,8 @@ def scrape_website(url, max_depth=2, max_pages=10):
                 except requests.exceptions.SSLError:
                     resp = requests.get(current_url, timeout=10, headers=BROWSER_HEADERS, verify=False)
                     logging.warning(f"SSL verification disabled for {current_url}")
+                content_type = resp.headers.get('content-type', 'unknown')
+                logging.debug(f"Scraping {current_url} - Content-Type: {content_type}, First 100 bytes: {resp.content[:100]}")
                 if resp.status_code != 200:
                     logging.error(f"Non-200 status code {resp.status_code} for {current_url}")
                     continue
@@ -185,17 +246,36 @@ def scrape_website(url, max_depth=2, max_pages=10):
                     text = extract_pdf_text(resp)
                     if text:
                         transcript_sections.append(text)
-                else:
+                elif is_text_response(resp):
                     html = resp.text
                     main_text = extract_main_text(html, current_url)
-                    if main_text:
-                        transcript_sections.append(main_text)
-                    video_links.update(find_video_links(html, current_url))
+                    # Check for empty or mostly binary output
+                    if not main_text or is_mostly_binary(main_text):
+                        # Fallback to Playwright for JS-heavy or protected sites
+                        logging.info(f"Falling back to Playwright for {current_url}")
+                        main_text = run_async_playwright(scrape_website_playwright_async(current_url))
+                        used_playwright = True
+                        if not main_text or is_mostly_binary(main_text):
+                            raise ValueError(
+                                f"The provided URL did not yield extractable text content, even after browser rendering. "
+                                f"It may be protected, binary, or unsupported."
+                            )
+                    transcript_sections.append(main_text)
+                    # Only try to find video links if not using Playwright (to avoid extra requests)
+                    if not used_playwright:
+                        video_links.update(find_video_links(html, current_url))
                     if depth < max_depth:
                         links = get_links(html, current_url)
                         for link in links:
                             if link not in visited:
                                 to_visit.append((link, depth + 1))
+                else:
+                    # Not a supported content type
+                    raise ValueError(
+                        f"The provided URL does not contain extractable text content. "
+                        f"Content-Type: {resp.headers.get('content-type', 'unknown')}. "
+                        f"This may be a protected, binary, or unsupported file type."
+                    )
                 pages_scraped += 1
             except Exception as e:
                 logging.error(f"Error scraping {current_url}: {e}")
