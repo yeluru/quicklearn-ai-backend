@@ -100,7 +100,7 @@ async def chat_on_topic(req: ChatInput):
 
         system_prompt = {
             "role": "system",
-            "content": f"You are a helpful assistant. Use the following transcript to answer questions:\n\n{transcript[:10000] if transcript else 'No transcript provided.'}"
+            "content": f"You are a helpful assistant. Use the following transcript to answer questions. When you mention mathematical expressions or formulas, always use LaTeX syntax and wrap them in $...$ for inline math or $$...$$ for block math. If the question is about a mathematical or technical concept, answer in a tutorial style, with step-by-step reasoning, formulas, and examples.\n\n{transcript[:10000] if transcript else 'No transcript provided.'}"
         }
 
         messages = [system_prompt] + chat_history

@@ -34,15 +34,18 @@ async def summarize_video(input: VideoInput):
                     {"role": "system", "content": "You are a helpful assistant that summarizes videos."},
                     {"role": "user", "content": (
                         f"Based on this transcript excerpt: '{truncated_transcript}...', "
-                        f"provide a 3-4 sentence summary in plain text."
-                        f"In the summary, do not start with 'The text' or 'The excerpt' or 'The excerpt discusses' or 'transcript excerpt discusses' or 'video discusses' mention anything about speaker, instead generalize the summary."
+                        f"provide a 3-4 sentence summary in plain text. "
+                        f"In the summary, do not start with 'The text' or 'The excerpt' or 'The excerpt discusses' or 'transcript excerpt discusses' or 'video discusses' mention anything about speaker, instead generalize the summary. "
+                        f"When you mention mathematical expressions or formulas, always use LaTeX syntax and wrap them in $...$ for inline math or $$...$$ for block math. "
+                        f"If the transcript discusses a mathematical or technical concept, explain it as a teacher would, using formulas, step-by-step reasoning, and examples where appropriate. Prefer a tutorial style over a generic summary when the content is instructional. "
+                        f"For each key concept, provide at least one worked example with numbers and formulas, step by step. Ignore repeated or filler phrases from the transcript; focus on unique mathematical explanations and problem-solving steps. Minimize motivational or generic language; focus on clear, logical, and example-driven teaching."
                     )}
                 ],
                 max_tokens=100,
                 temperature=0.7
             )
-            
-            summary = response.choices[0].message.content.strip() or "No summary available."
+            content = response.choices[0].message.content
+            summary = content.strip() if content else "No summary available."
             logging.info(f"OpenAI summary: {summary[:200]}...")
         
         logging.info(f"Returning summary: {summary[:50]}...")
@@ -83,6 +86,11 @@ Guidelines:
 - Continue from prior sections naturally, as if writing part of a larger publication.
 - Avoid motivational filler, excessive metaphors, or redundant whitespace.
 - Ensure the output is ready-to-publish, highly engaging, and clear for intelligent general readers.
+- When including mathematical expressions or formulas, always use LaTeX syntax and wrap them in $...$ for inline math or $$...$$ for block math.
+- If the transcript covers a mathematical or technical concept, include a clear, step-by-step explanation, with formulas and worked examples as a teacher would. Favor a tutorial style over a generic summary when the content is instructional.
+- For each key concept, provide at least one worked example with numbers and formulas, step by step.
+- Ignore repeated or filler phrases from the transcript; focus on unique mathematical explanations and problem-solving steps.
+- Minimize motivational or generic language; focus on clear, logical, and example-driven teaching.
 """
                 stream = client.chat.completions.create(
                     model="gpt-3.5-turbo",
@@ -133,6 +141,11 @@ Guidelines:
 - Provide detailed walkthroughs for complex processes, like step-by-step debugging logic.
 - Avoid narrative clichés (e.g., "let's explore") or excessive whitespace.
 - Ensure the output is engaging, insightful, and ready for publication on a professional learning platform.
+- When including mathematical expressions or formulas, always use LaTeX syntax and wrap them in $...$ for inline math or $$...$$ for block math.
+- For questions about mathematical or technical concepts, provide detailed, step-by-step answers with formulas and worked examples, as a tutor would.
+- For each key concept, provide at least one worked example with numbers and formulas, step by step.
+- Ignore repeated or filler phrases from the transcript; focus on unique mathematical explanations and problem-solving steps.
+- Minimize motivational or generic language; focus on clear, logical, and example-driven teaching.
 """
                 stream = client.chat.completions.create(
                     model="gpt-3.5-turbo",
