@@ -22,6 +22,7 @@ def get_transcript_via_ytdlp(url: str) -> dict:
                 '--skip-download',
                 '--no-warnings',
                 '-o', f'{temp_dir}/%(title)s.%(ext)s',
+                '--no-write-automatic-cookies',
                 '--cookies', '/etc/secrets/cookies.txt',
                 url
             ]
@@ -138,6 +139,7 @@ def get_transcript_via_audio(url: str) -> dict:
                 '--audio-quality', '192K',
                 '--no-warnings',
                 '-o', f'{temp_dir}/%(title)s.%(ext)s',
+                '--no-write-automatic-cookies',
                 '--cookies', '/etc/secrets/cookies.txt',
                 url
             ]
