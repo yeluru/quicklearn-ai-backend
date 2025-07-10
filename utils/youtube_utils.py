@@ -6,6 +6,7 @@ import logging
 from openai import OpenAI
 from config import OPENAI_API_KEY, YOUTUBE_API_KEY
 import math
+import shutil
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 client = OpenAI(api_key=OPENAI_API_KEY)
@@ -13,6 +14,10 @@ client = OpenAI(api_key=OPENAI_API_KEY)
 def get_transcript_via_ytdlp(url: str) -> dict:
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
+            # Copy cookies.txt from Render Secret Files to a writable temp location
+            cookies_src = '/etc/secrets/cookies.txt'
+            cookies_dst = f'{temp_dir}/cookies.txt'
+            shutil.copy(cookies_src, cookies_dst)
             cmd = [
                 'yt-dlp',
                 '--write-sub',
@@ -22,8 +27,7 @@ def get_transcript_via_ytdlp(url: str) -> dict:
                 '--skip-download',
                 '--no-warnings',
                 '-o', f'{temp_dir}/%(title)s.%(ext)s',
-                '--no-write-automatic-cookies',
-                '--cookies', '/etc/secrets/cookies.txt',
+                '--cookies', cookies_dst,
                 url
             ]
             logging.info(f"Running yt-dlp command: {' '.join(cmd)}")
@@ -132,6 +136,10 @@ def split_audio_ffmpeg(audio_file, max_size=24*1024*1024):
 def get_transcript_via_audio(url: str) -> dict:
     try:
         with tempfile.TemporaryDirectory() as temp_dir:
+            # Copy cookies.txt from Render Secret Files to a writable temp location
+            cookies_src = '/etc/secrets/cookies.txt'
+            cookies_dst = f'{temp_dir}/cookies.txt'
+            shutil.copy(cookies_src, cookies_dst)
             cmd = [
                 'yt-dlp',
                 '--extract-audio',
@@ -139,8 +147,7 @@ def get_transcript_via_audio(url: str) -> dict:
                 '--audio-quality', '192K',
                 '--no-warnings',
                 '-o', f'{temp_dir}/%(title)s.%(ext)s',
-                '--no-write-automatic-cookies',
-                '--cookies', '/etc/secrets/cookies.txt',
+                '--cookies', cookies_dst,
                 url
             ]
             logging.info("Downloading audio for transcription...")
