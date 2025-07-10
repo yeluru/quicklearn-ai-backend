@@ -17,3 +17,4 @@ beautifulsoup4
 lxml
 readability-lxml
 pdfminer.six
+playwright
