@@ -22,6 +22,7 @@ def get_transcript_via_ytdlp(url: str) -> dict:
                 '--skip-download',
                 '--no-warnings',
                 '-o', f'{temp_dir}/%(title)s.%(ext)s',
+                '--cookies', '/home/render/project/src/cookies.txt',
                 url
             ]
             logging.info(f"Running yt-dlp command: {' '.join(cmd)}")
@@ -137,6 +138,7 @@ def get_transcript_via_audio(url: str) -> dict:
                 '--audio-quality', '192K',
                 '--no-warnings',
                 '-o', f'{temp_dir}/%(title)s.%(ext)s',
+                '--cookies', '/home/render/project/src/cookies.txt',
                 url
             ]
             logging.info("Downloading audio for transcription...")
