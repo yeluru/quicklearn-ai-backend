@@ -138,7 +138,7 @@ def get_transcript_via_audio(url: str) -> dict:
                 '--audio-quality', '192K',
                 '--no-warnings',
                 '-o', f'{temp_dir}/%(title)s.%(ext)s',
-                '--cookies', '/home/render/project/src/cookies.txt',
+                '--cookies', '/etc/secrets/cookies.txt',
                 url
             ]
             logging.info("Downloading audio for transcription...")
