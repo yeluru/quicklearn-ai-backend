@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # QuickLearn.AI
 
 ## 🚀 Complete AI-Powered Learning Platform
@@ -523,3 +524,7 @@ For issues and questions:
 ---
 
 **QuickLearn.AI Backend** - Empowering learning through AI-powered content analysis and interaction.
+=======
+# vibeknowing-worker
+vibeknowing-worker
+>>>>>>> 08b218ae49f17a00f14541fafe454c2679d0004b
