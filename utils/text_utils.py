@@ -82,3 +82,71 @@ def format_transcript(text: str) -> str:
     if current_paragraph:
         paragraphs.append(' '.join(current_paragraph))
     return '\n\n'.join(paragraphs)
+
+def parse_vtt_with_timestamps(content: str) -> str:
+    """
+    Parse VTT content and return transcript with timestamps.
+    Each line will be formatted as:
+    [hh:mm:ss.xxx] text
+    """
+    lines = content.split('\n')
+    output = []
+    current_time = None
+    current_text = []
+    for line in lines:
+        line = line.strip()
+        if re.match(r"\d{2}:\d{2}:\d{2}\.\d{3} --> ", line):
+            # Save previous block
+            if current_time and current_text:
+                text = remove_vtt_tags(' '.join(current_text)).strip()
+                if text:
+                    output.append(f"[{current_time}] {text}")
+            # Start new block
+            current_time = line.split(' --> ')[0]
+            current_text = []
+        elif (
+            line and
+            not line.startswith('WEBVTT') and
+            '-->' not in line and
+            not line.isdigit() and
+            not line.startswith('NOTE') and
+            not line.startswith('STYLE')
+        ):
+            current_text.append(line)
+    # Add last block
+    if current_time and current_text:
+        text = remove_vtt_tags(' '.join(current_text)).strip()
+        if text:
+            output.append(f"[{current_time}] {text}")
+    return '\n'.join(output)
+
+def clean_and_aggregate_transcript(text: str) -> str:
+    """
+    Remove timestamps in square brackets, remove only exact consecutive duplicate lines, and aggregate into paragraphs.
+    """
+    import re
+    # Remove timestamps like [00:00:03.480]
+    text = re.sub(r'\[\d{2}:\d{2}:\d{2}\.\d{3}\]', '', text)
+    # Remove "Kind: captions Language: en" header
+    text = re.sub(r'^Kind:\s*captions\s*Language:\s*\w+\s*', '', text, flags=re.IGNORECASE)
+    # Split into lines and clean
+    lines = [line.strip() for line in text.split('\n') if line.strip()]
+    # Remove only exact consecutive duplicates
+    deduped = []
+    for line in lines:
+        if not deduped or line != deduped[-1]:
+            deduped.append(line)
+    # Join and format as paragraphs
+    paragraph = ' '.join(deduped)
+    paragraph = re.sub(r'\s+', ' ', paragraph).strip()
+    sentences = re.split(r'(?<=[.!?])\s+', paragraph)
+    paragraphs, current = [], []
+    for sentence in sentences:
+        if sentence:
+            current.append(sentence)
+            if len(current) >= 4:
+                paragraphs.append(' '.join(current))
+                current = []
+    if current:
+        paragraphs.append(' '.join(current))
+    return '\n\n'.join(paragraphs)

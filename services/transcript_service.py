@@ -10,8 +10,8 @@ from PyPDF2 import PdfReader
 from docx import Document
 from config import YOUTUBE_API_KEY, OPENAI_API_KEY
 from utils.url_utils import extract_video_id, extract_playlist_id, normalize_youtube_url
-from utils.text_utils import clean_transcript_text, parse_vtt_content, format_transcript
-from utils.youtube_utils import get_transcript_via_ytdlp, get_transcript_via_audio, generate_title, split_audio_ffmpeg, split_mp4_ffmpeg
+from utils.text_utils import clean_transcript_text, parse_vtt_content, format_transcript, parse_vtt_with_timestamps, clean_and_aggregate_transcript
+from utils.youtube_utils import get_transcript_via_ytdlp, get_transcript_via_audio, generate_title, split_audio_ffmpeg, split_mp4_ffmpeg, get_transcript_from_worker
 from exceptions.custom_exceptions import TranscriptError
 from openai import OpenAI
 import logging
@@ -504,41 +504,42 @@ def get_youtube_transcript(url: str):
         logging.info(f"Received request for transcript with URL: {url}")
         
         playlist_id = extract_playlist_id(url)
-        if playlist_id:
+        video_id = extract_video_id(url)
+        # If both playlist and video ID are present, treat as playlist
+        if playlist_id and video_id:
+            logging.info(f"Detected both playlist and video ID, routing to playlist handler for playlist ID: {playlist_id}")
+            return get_playlist_transcript(playlist_id)
+        if playlist_id and not video_id:
             logging.info(f"Detected playlist URL with ID: {playlist_id}, routing to playlist handler")
             return get_playlist_transcript(playlist_id)
-        
-        video_id = extract_video_id(url)
         if not video_id:
             logging.error(f"Invalid YouTube URL: {url}")
             raise TranscriptError("Invalid YouTube URL")
 
         logging.info(f"Extracted video ID: {video_id}")
         
-        transcript_result = get_transcript_via_ytdlp(url)
-        if transcript_result.get("content"):
-            transcript_text = clean_transcript_text(parse_vtt_content(transcript_result["content"]))
-            logging.info(f"Successfully retrieved transcript via yt-dlp for video ID: {video_id}")
+        # Use the worker for transcript extraction
+        transcript_result = get_transcript_from_worker(url)
+        if transcript_result.get("transcript"):
+            # If the method is subtitles, parse as plaintext paragraphs and aggregate
+            if transcript_result.get("method") == "subtitles":
+                logging.info(f"Processing subtitles transcript, method: {transcript_result.get('method')}")
+                logging.info(f"Raw transcript (first 200 chars): {transcript_result['transcript'][:200]}")
+                transcript = parse_vtt_content(transcript_result["transcript"])
+                logging.info(f"After parse_vtt_content (first 200 chars): {transcript[:200]}")
+                transcript = clean_and_aggregate_transcript(transcript)
+                logging.info(f"After clean_and_aggregate_transcript (first 200 chars): {transcript[:200]}")
+                logging.info(f"Returning cleaned/aggregated transcript (first 500 chars): {transcript[:500]}")
+            else:
+                transcript = transcript_result["transcript"]
+                logging.info(f"Returning plain transcript (first 500 chars): {transcript[:500]}")
             return {
-                "transcript": transcript_text,
-                "title": generate_title(transcript_text),
-                "method": "yt-dlp_subtitles"
+                "transcript": transcript,
+                "method": transcript_result.get("method", "worker"),
             }
-        
-        logging.info(f"No subtitles found, trying audio transcription for video ID: {video_id}")
-        audio_result = get_transcript_via_audio(url)
-        if audio_result.get("content"):
-            transcript_text = clean_transcript_text(audio_result["content"])
-            logging.info(f"Successfully retrieved transcript via audio for video ID: {video_id}")
-            return {
-                "transcript": transcript_text,
-                "title": generate_title(transcript_text),
-                "method": "whisper_audio"
-            }
-        
-        logging.error(f"All methods failed for video ID: {video_id}")
-        raise TranscriptError("No transcript available for this video. Try a different video with captions or clear audio.")
-        
+        else:
+            raise TranscriptError(transcript_result.get("error", "Failed to get transcript from worker."))
+    
     except TranscriptError as e:
         raise e
     except Exception as e:
@@ -552,6 +553,7 @@ def get_playlist_transcript(playlist_id: str):
     """
     from fastapi.responses import StreamingResponse
     import json
+    from utils.youtube_utils import get_transcript_from_worker
     
     def stream_playlist():
         try:
@@ -594,9 +596,14 @@ def get_playlist_transcript(playlist_id: str):
                     yield f"data: {json.dumps({'type': 'progress', 'message': f'Processing video {video_count}: {video_title}'})}\n\n"
                     
                     try:
-                        result = get_transcript_via_ytdlp(video_url)
-                        if result.get("content"):
-                            transcript_text = clean_transcript_text(parse_vtt_content(result["content"]))
+                        # Use the worker for each video
+                        result = get_transcript_from_worker(video_url)
+                        if result.get("transcript"):
+                            transcript_text = result["transcript"]
+                            # If subtitles, parse as plaintext paragraphs and aggregate
+                            if result.get("method") == "subtitles":
+                                transcript_text = parse_vtt_content(transcript_text)
+                                transcript_text = clean_and_aggregate_transcript(transcript_text)
                             video_header = f"=== {video_title} ===\n\n"
                             success_count += 1
                             logging.info(f"✓ Successfully got transcript for: {video_title}")
@@ -610,27 +617,22 @@ def get_playlist_transcript(playlist_id: str):
                             failed_videos.append({"title": video_title, "id": video_id, "error": result.get("error", "Unknown error")})
                             logging.warning(f"✗ Could not get transcript for: {video_title} - {result.get('error', 'Unknown error')}")
                             yield f"data: {json.dumps({'type': 'progress', 'message': f'✗ Failed: {video_title}'})}\n\n"
-                            
                     except Exception as e:
                         failed_videos.append({"title": video_title, "id": video_id, "error": str(e)})
-                        logging.warning(f"✗ Failed to fetch transcript for video '{video_title}' (ID: {video_id}): {str(e)}")
-                        yield f"data: {json.dumps({'type': 'progress', 'message': f'✗ Error with {video_title}: {str(e)}'})}\n\n"
-                        continue
+                        logging.warning(f"✗ Exception for {video_title}: {str(e)}")
+                        yield f"data: {json.dumps({'type': 'progress', 'message': f'✗ Exception: {video_title}'})}\n\n"
 
-                if "nextPageToken" in data:
-                    page_token = data["nextPageToken"]
-                    logging.info(f"Moving to next page with token: {page_token}")
-                else:
+                # Check for next page
+                page_token = data.get("nextPageToken", "")
+                if not page_token:
                     break
 
-            summary = f"Playlist processing complete! Successfully transcribed {success_count}/{video_count} videos"
-            logging.info(f"✓ {summary}")
-            yield f"data: {json.dumps({'type': 'complete', 'message': summary, 'stats': {'total': video_count, 'success': success_count}})}\n\n"
-            
+            logging.info(f"Playlist processing complete. Success: {success_count}, Failed: {len(failed_videos)}")
+            yield f"data: {json.dumps({'type': 'complete', 'success': success_count, 'failed': len(failed_videos), 'failed_videos': failed_videos})}\n\n"
         except Exception as e:
-            logging.error(f"Error in playlist streaming: {str(e)}")
+            logging.error(f"Playlist transcript extraction error: {str(e)}")
             yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
-    
+
     return StreamingResponse(stream_playlist(), media_type="text/event-stream")
 
 def stream_playlist_generator(playlist_id: str):
@@ -680,6 +682,10 @@ def stream_playlist_generator(playlist_id: str):
                     result = get_transcript_via_ytdlp(video_url)
                     if result.get("content"):
                         transcript_text = clean_transcript_text(parse_vtt_content(result["content"]))
+                        # If subtitles, parse as plaintext paragraphs and aggregate
+                        if result.get("method") == "subtitles":
+                            transcript_text = parse_vtt_content(result["content"])
+                            transcript_text = clean_and_aggregate_transcript(transcript_text)
                         video_header = f"=== {video_title} ===\n\n"
                         success_count += 1
                         logging.info(f"✓ Successfully got transcript for: {video_title}")
@@ -869,40 +875,37 @@ def stream_audio_transcription(url: str):
 @router.get("/segments")
 def get_transcript_segments(url: str = Query(..., description="YouTube video URL or ID")):
     """
-    Returns transcript segments with timestamps for a given YouTube video.
-    Falls back to plain transcript if segments are unavailable.
+    Returns transcript segments with timestamps for a given video URL (YouTube, Vimeo, Instagram, etc.).
+    Always uses the home worker for processing.
     """
+    from utils.youtube_utils import get_transcript_from_worker
     try:
-        # Check for playlist first
+        if not url or not url.startswith("http"):
+            raise HTTPException(status_code=400, detail="Invalid video URL")
         playlist_id = extract_playlist_id(url)
-        if playlist_id:
+        video_id = extract_video_id(url)
+        # If both playlist and video ID are present, treat as playlist
+        if playlist_id and video_id:
+            logging.info(f"Detected both playlist and video ID, routing to playlist handler for playlist ID: {playlist_id}")
+            return get_playlist_transcript(playlist_id)
+        if playlist_id and not video_id:
             logging.info(f"Detected playlist URL with ID: {playlist_id}, routing to playlist handler")
             return get_playlist_transcript(playlist_id)
-        
-        video_id = extract_video_id(url) if 'youtube' in url else url
-        if not video_id:
-            raise HTTPException(status_code=400, detail="Invalid YouTube URL or ID")
-        
-        try:
-            try:
-                from youtube_transcript_api import YouTubeTranscriptApi
-                segments = YouTubeTranscriptApi.get_transcript(video_id)
-                return {"segments": segments}
-            except ImportError:
-                raise Exception("youtube_transcript_api is not installed")
-        except Exception:
-            # Fallback to plain transcript extraction
-            transcript_result = get_transcript_via_ytdlp(url)
-            if transcript_result.get("content"):
-                transcript_text = clean_transcript_text(parse_vtt_content(transcript_result["content"]))
-                return JSONResponse({"segments": None, "transcript": transcript_text})
-            
-            # If no subtitles, stream audio transcription
-            from fastapi.responses import StreamingResponse
-            def stream_fallback():
-                yield from stream_audio_transcription(url)
-            return StreamingResponse(stream_fallback(), media_type="text/event-stream")
-            
+        # Always use the worker for any video URL
+        transcript_result = get_transcript_from_worker(url)
+        if transcript_result.get("transcript"):
+            if transcript_result.get("method") == "subtitles":
+                logging.info(f"[SEGMENTS] Processing subtitles transcript, method: {transcript_result.get('method')}")
+                logging.info(f"[SEGMENTS] Raw transcript (first 200 chars): {transcript_result['transcript'][:200]}")
+                transcript = parse_vtt_content(transcript_result["transcript"])
+                logging.info(f"[SEGMENTS] After parse_vtt_content (first 200 chars): {transcript[:200]}")
+                transcript = clean_and_aggregate_transcript(transcript)
+                logging.info(f"[SEGMENTS] After clean_and_aggregate_transcript (first 200 chars): {transcript[:200]}")
+            else:
+                transcript = transcript_result["transcript"]
+            return {"segments": None, "transcript": transcript}
+        else:
+            raise HTTPException(status_code=500, detail=transcript_result.get("error", "Failed to get transcript from worker."))
     except Exception as e:
         logging.error(f"Transcript segment fetch error for {url}: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch transcript segments: {str(e)}")

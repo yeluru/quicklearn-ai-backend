@@ -7,9 +7,12 @@ from openai import OpenAI
 from config import OPENAI_API_KEY, YOUTUBE_API_KEY
 import math
 import shutil
+import httpx
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 client = OpenAI(api_key=OPENAI_API_KEY)
+
+WORKER_URL = os.getenv("WORKER_URL")
 
 def get_transcript_via_ytdlp(url: str) -> dict:
     try:
@@ -179,6 +182,16 @@ def get_transcript_via_audio(url: str) -> dict:
         return {"error": "Audio download timed out"}
     except Exception as e:
         logging.error(f"Audio transcription error: {str(e)}")
+        return {"error": str(e)}
+
+def get_transcript_from_worker(youtube_url: str):
+    payload = {"url": youtube_url}
+    try:
+        response = httpx.post(WORKER_URL, json=payload, timeout=180)
+        response.raise_for_status()
+        data = response.json()
+        return data  # Contains 'method' and 'transcript'
+    except Exception as e:
         return {"error": str(e)}
 
 def generate_title(text: str) -> str:

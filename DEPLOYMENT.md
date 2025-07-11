@@ -1,90 +1,138 @@
-# QuickLearn.AI Deployment Guide
+# QuickLearn.AI Backend Deployment Guide
 
 ## Prerequisites
-- GitHub repository with your code
-- OpenAI API key
-- YouTube API key (optional, for enhanced features)
 
-## Environment Variables
-Set these in your deployment platform:
+1. **GitHub Repository**: Push your code to GitHub
+2. **Render Account**: Sign up at [render.com](https://render.com)
+3. **Worker Setup**: Ensure your worker is running with ngrok
 
+## Step 1: Prepare Your Repository
+
+Make sure your repository structure looks like this:
 ```
-OPENAI_API_KEY=your_openai_api_key_here
-YOUTUBE_API_KEY=your_youtube_api_key_here
-ALLOWED_ORIGINS=https://your-frontend-domain.com,http://localhost:3000
-API_BASE_URL=https://your-backend-domain.com
+quicklearn-ai-backend/
+├── main.py
+├── config.py
+├── requirements.txt
+├── Procfile
+├── runtime.txt
+├── services/
+├── utils/
+├── exceptions/
+└── tests/
 ```
 
-## Option 1: Railway Deployment (Recommended)
+## Step 2: Create Render Web Service
 
-### Backend Deployment
-1. Go to [Railway](https://railway.app)
-2. Connect your GitHub repository
-3. Create a new project
-4. Select the `quicklearn-ai-backend` directory
-5. Add environment variables
-6. Deploy
-
-### Frontend Deployment
-1. In Railway, create another service
-2. Select the `quicklearn-ai-frontend` directory
-3. Set build command: `npm install && npm run build`
-4. Set start command: `npm start`
-5. Add environment variable: `REACT_APP_API_URL=https://your-backend-url.railway.app`
-
-## Option 2: Render Deployment
-
-### Backend
-1. Go to [Render](https://render.com)
-2. Create a new Web Service
+1. Go to [render.com](https://render.com) and sign in
+2. Click "New +" → "Web Service"
 3. Connect your GitHub repository
-4. Set build command: `pip install -r requirements.txt`
-5. Set start command: `uvicorn main:app --host 0.0.0.0 --port $PORT`
-6. Add environment variables
+4. Select the `quicklearn-ai-backend` directory
+5. Configure the service:
 
-### Frontend
-1. Create a new Static Site
-2. Connect your GitHub repository
-3. Set build command: `npm install && npm run build`
-4. Set publish directory: `build`
+### Basic Settings
+- **Name**: `quicklearn-ai-backend` (or your preferred name)
+- **Environment**: `Python 3`
+- **Region**: Choose closest to your users
+- **Branch**: `main` (or your default branch)
 
-## Option 3: Vercel + Railway
+### Build & Deploy Settings
+- **Build Command**: `pip install -r requirements.txt`
+- **Start Command**: `uvicorn main:app --host 0.0.0.0 --port $PORT`
 
-### Frontend (Vercel)
-1. Go to [Vercel](https://vercel.com)
-2. Import your GitHub repository
-3. Set root directory to `quicklearn-ai-frontend`
-4. Add environment variable: `REACT_APP_API_URL=https://your-backend-url.railway.app`
+## Step 3: Configure Environment Variables
 
-### Backend (Railway)
-Follow the Railway backend deployment steps above.
+In your Render dashboard, go to "Environment" tab and add these variables:
 
-## Post-Deployment Checklist
+### Required Variables
+```
+OPENAI_API_KEY=sk-your-openai-api-key-here
+WORKER_URL=https://your-ngrok-url.ngrok-free.app/transcribe
+ALLOWED_ORIGINS=https://your-frontend-url.onrender.com,http://localhost:3000
+```
 
-1. ✅ Test video transcript extraction
-2. ✅ Test file upload functionality
-3. ✅ Test chat functionality
-4. ✅ Test summary generation
-5. ✅ Verify CORS settings
-6. ✅ Check environment variables
-7. ✅ Test with different video platforms (YouTube, Vimeo, TED)
+### Optional Variables
+```
+YOUTUBE_API_KEY=your-youtube-api-key-here
+API_BASE_URL=https://your-backend-url.onrender.com
+```
+
+## Step 4: Deploy
+
+1. Click "Create Web Service"
+2. Render will automatically build and deploy your application
+3. Monitor the build logs for any issues
+4. Once deployed, you'll get a URL like: `https://your-app-name.onrender.com`
+
+## Step 5: Test Your Deployment
+
+1. **Health Check**: Visit `https://your-app-name.onrender.com/health`
+2. **API Test**: Test your endpoints using the new URL
+3. **Worker Integration**: Ensure your worker is accessible from Render
+
+## Step 6: Update Frontend Configuration
+
+Update your frontend to use the new backend URL:
+
+```javascript
+// In your frontend configuration
+const API_BASE_URL = 'https://your-app-name.onrender.com';
+```
 
 ## Troubleshooting
 
-### Common Issues:
-1. **CORS errors**: Ensure `ALLOWED_ORIGINS` includes your frontend URL
-2. **API key errors**: Verify all environment variables are set correctly
-3. **yt-dlp issues**: Some platforms may require additional system dependencies
-4. **File upload size limits**: Check platform-specific limits
+### Common Issues
 
-### Performance Optimization:
-1. Consider using Redis for caching
-2. Implement rate limiting
-3. Use CDN for static assets
-4. Optimize audio processing for large files
+1. **Build Failures**
+   - Check that all dependencies are in `requirements.txt`
+   - Ensure Python version in `runtime.txt` is supported by Render
+
+2. **Environment Variables**
+   - Double-check all environment variables are set correctly
+   - Ensure `WORKER_URL` points to your active ngrok tunnel
+
+3. **CORS Issues**
+   - Verify `ALLOWED_ORIGINS` includes your frontend URL
+   - Check that URLs don't have trailing slashes
+
+4. **Worker Connection Issues**
+   - Ensure your worker is running and accessible
+   - Check ngrok tunnel is active and URL is correct
+   - Verify worker can handle requests from Render's IP
+
+### Logs and Debugging
+
+1. **View Logs**: In Render dashboard, go to "Logs" tab
+2. **Real-time Logs**: Use "Live" button to see real-time logs
+3. **Environment**: Check environment variables in "Environment" tab
 
 ## Monitoring
-- Set up logging and monitoring
-- Monitor API usage and costs
-- Set up alerts for errors
-- Track user engagement metrics 
+
+1. **Health Checks**: Render automatically checks `/health` endpoint
+2. **Uptime**: Monitor service status in dashboard
+3. **Performance**: Check response times and error rates
+
+## Scaling
+
+- **Free Tier**: Limited to 750 hours/month
+- **Paid Plans**: Start at $7/month for unlimited usage
+- **Auto-scaling**: Available on paid plans
+
+## Security Notes
+
+1. **API Keys**: Never commit API keys to your repository
+2. **Environment Variables**: Use Render's environment variable system
+3. **CORS**: Configure `ALLOWED_ORIGINS` properly
+4. **Worker Security**: Ensure your worker is properly secured
+
+## Maintenance
+
+1. **Updates**: Push to GitHub to trigger automatic deployments
+2. **Worker Updates**: Restart worker and update ngrok URL if needed
+3. **Monitoring**: Regularly check logs and performance metrics
+
+## Support
+
+- **Render Docs**: [docs.render.com](https://docs.render.com)
+- **FastAPI Docs**: [fastapi.tiangolo.com](https://fastapi.tiangolo.com)
+- **Community**: Render Discord and GitHub discussions 

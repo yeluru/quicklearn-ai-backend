@@ -19,3 +19,4 @@ readability-lxml
 pdfminer.six
 playwright
 nest_asyncio
+python-dotenv

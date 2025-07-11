@@ -1,0 +1,1 @@
+WORKER_URL = "https://7c21424eb051.ngrok-free.app/transcribe" 
