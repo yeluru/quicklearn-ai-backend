@@ -32,6 +32,10 @@ async def root():
 async def health_check():
     return {"status": "healthy", "service": "QuickLearn.AI Backend"}
 
+@app.get("/debug/cors")
+async def debug_cors():
+    return {"allowed_origins": ALLOWED_ORIGINS}
+
 @app.post("/scrape")
 async def scrape_website_endpoint(request: Request):
     data = await request.json()
