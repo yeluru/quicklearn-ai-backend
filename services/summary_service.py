@@ -100,9 +100,11 @@ Guidelines:
                 )
                 for chunk in stream:
                     content = chunk.choices[0].delta.content or ""
-                    yield content
+                    if content:
+                        yield json.dumps({"type": "chunk", "content": content}) + "\n"
+            yield json.dumps({"type": "done"}) + "\n"
 
-        return StreamingResponse(chunk_stream(), media_type="text/plain")
+        return StreamingResponse(chunk_stream(), media_type="application/json")
     except SummaryError as e:
         raise e
     except Exception as e:
@@ -155,9 +157,11 @@ Guidelines:
                 )
                 for chunk in stream:
                     content = chunk.choices[0].delta.content or ""
-                    yield content
+                    if content:
+                        yield json.dumps({"type": "chunk", "content": content}) + "\n"
+            yield json.dumps({"type": "done"}) + "\n"
 
-        return StreamingResponse(chunk_stream(), media_type="text/plain")
+        return StreamingResponse(chunk_stream(), media_type="application/json")
     except SummaryError as e:
         raise e
     except Exception as e:
