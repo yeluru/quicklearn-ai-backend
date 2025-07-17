@@ -98,13 +98,19 @@ Guidelines:
                     stream=True,
                     max_tokens=4096
                 )
+                buffer = ""
                 for chunk in stream:
                     content = chunk.choices[0].delta.content or ""
-                    if content:
-                        yield json.dumps({"type": "chunk", "content": content}) + "\n"
-            yield json.dumps({"type": "done"}) + "\n"
+                    buffer += content
+                    # Yield only when a double newline is found (end of Markdown block)
+                    while "\n\n" in buffer:
+                        block, buffer = buffer.split("\n\n", 1)
+                        yield block + "\n\n"
+                # Yield any remaining content after the stream ends
+                if buffer.strip():
+                    yield buffer
 
-        return StreamingResponse(chunk_stream(), media_type="application/json")
+        return StreamingResponse(chunk_stream(), media_type="text/plain")
     except SummaryError as e:
         raise e
     except Exception as e:
@@ -155,13 +161,19 @@ Guidelines:
                     stream=True,
                     max_tokens=2048
                 )
+                buffer = ""
                 for chunk in stream:
                     content = chunk.choices[0].delta.content or ""
-                    if content:
-                        yield json.dumps({"type": "chunk", "content": content}) + "\n"
-            yield json.dumps({"type": "done"}) + "\n"
+                    buffer += content
+                    # Yield only when a double newline is found (end of Markdown block)
+                    while "\n\n" in buffer:
+                        block, buffer = buffer.split("\n\n", 1)
+                        yield block + "\n\n"
+                # Yield any remaining content after the stream ends
+                if buffer.strip():
+                    yield buffer
 
-        return StreamingResponse(chunk_stream(), media_type="application/json")
+        return StreamingResponse(chunk_stream(), media_type="text/plain")
     except SummaryError as e:
         raise e
     except Exception as e:
