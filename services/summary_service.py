@@ -142,6 +142,7 @@ Guidelines:
 - Each Q&A pair must be a complete block, and must be separated from the next by exactly two newlines (\n\n). Do not break a Q&A pair across multiple blocks.
 - Only output a Q&A pair if both the question and answer are complete. If you cannot complete a pair, do not output it.
 - Never use placeholders like "s", "-", or incomplete sentences. Each answer must be a complete, well-formed paragraph.
+- Never use 's' as a placeholder. Always use the full word, such as 'answer', 'solution', or the appropriate term for the context. If you see a variable like 's' in the transcript, replace it with the full word in your output.
 - Do not truncate questions or answers. If you reach the end of the chunk, finish the current Q&A pair before stopping.
 - Avoid duplicate questions or shallow/trivial content; focus on depth and real-world relevance.
 - Use impersonal, objective language; avoid first-person ("I", "we") or second-person ("you").
