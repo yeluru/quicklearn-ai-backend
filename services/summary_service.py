@@ -138,10 +138,11 @@ Based on the following transcript, generate a thoughtful set of educational **qu
 {chunk}
 
 Guidelines:
-- Format each Q&A pair using **Markdown**: `### Question` for questions, `**Answer:**` for answers.
-- Write concise questions (1-2 sentences) probing meaningful technical concepts, mechanisms, or use cases.
-- Provide detailed answers (3-5 sentences) with clear examples, analogies, or technical explanations.
-- Ensure each Q&A pair is separated by a blank line for clarity.
+- Format each Q&A pair using **Markdown**: start with '### Question', then a blank line, then '**Answer:**', then the answer.
+- Each Q&A pair must be a complete block, and must be separated from the next by exactly two newlines (\n\n). Do not break a Q&A pair across multiple blocks.
+- Only output a Q&A pair if both the question and answer are complete. If you cannot complete a pair, do not output it.
+- Never use placeholders like "s", "-", or incomplete sentences. Each answer must be a complete, well-formed paragraph.
+- Do not truncate questions or answers. If you reach the end of the chunk, finish the current Q&A pair before stopping.
 - Avoid duplicate questions or shallow/trivial content; focus on depth and real-world relevance.
 - Use impersonal, objective language; avoid first-person ("I", "we") or second-person ("you").
 - Maintain a professional, learner-friendly tone suitable for a technical handbook or exam prep guide.
