@@ -6,6 +6,117 @@
 2. **Render Account**: Sign up at [render.com](https://render.com)
 3. **Worker Setup**: Ensure your worker is running with ngrok
 
+## Local Worker & ngrok Setup (Detailed Guide)
+
+### Overview
+The VibeKnowing Worker is a FastAPI service that runs locally (on your laptop, desktop, or a home server) to process YouTube and other video/audio content. It uses a residential IP to bypass YouTube restrictions and exposes its API to the cloud backend via an ngrok tunnel.
+
+### Prerequisites
+- Python 3.8 or higher (Python 3.11+ recommended)
+- pip (Python package manager)
+- ffmpeg (for audio/video processing)
+- yt-dlp (for video downloading)
+- OpenAI API key (for Whisper transcription)
+- ngrok account (free or paid)
+
+### 1. Clone the Worker Repository
+```bash
+git clone <your-worker-repo-url>
+cd vibeknowing-worker
+```
+
+### 2. Install Python Dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Install ffmpeg
+- **macOS:**
+  ```bash
+  brew install ffmpeg
+  ```
+- **Ubuntu/Debian:**
+  ```bash
+  sudo apt update
+  sudo apt install ffmpeg
+  ```
+- **Windows:**
+  - Download from https://ffmpeg.org/download.html
+  - Add ffmpeg to your system PATH
+
+### 4. Install yt-dlp
+```bash
+pip install yt-dlp
+```
+Or download the binary from https://github.com/yt-dlp/yt-dlp/releases and add it to your PATH.
+
+### 5. Set Your OpenAI API Key
+- Get your key from https://platform.openai.com/api-keys
+- Set it as an environment variable:
+  ```bash
+  export OPENAI_API_KEY="sk-..."
+  ```
+  (On Windows: use `set OPENAI_API_KEY=sk-...` in Command Prompt)
+
+### 6. Run the Worker Service
+```bash
+uvicorn worker:app --host 0.0.0.0 --port 8000
+```
+- The worker will be available at `http://localhost:8000/health`
+- Test with: `curl http://localhost:8000/health`
+
+### 7. Expose the Worker with ngrok
+- Sign up at https://ngrok.com and download ngrok for your OS.
+- Authenticate ngrok (replace YOUR_TOKEN):
+  ```bash
+  ngrok config add-authtoken YOUR_TOKEN
+  ```
+- Start the tunnel:
+  ```bash
+  ngrok http 8000
+  ```
+- You’ll get a public URL like `https://abc123.ngrok-free.app`.
+- The worker API will be at `https://abc123.ngrok-free.app/transcribe`
+
+### 8. Update Backend WORKER_URL
+- In your backend’s environment variables, set:
+  ```bash
+  WORKER_URL=https://abc123.ngrok-free.app/transcribe
+  ```
+- Restart your backend if needed.
+
+### 9. Troubleshooting
+- **Worker not reachable?**
+  - Make sure the worker is running and ngrok tunnel is active.
+  - Check for firewall or router issues blocking port 8000.
+- **yt-dlp or ffmpeg errors?**
+  - Ensure both are installed and available in your PATH.
+  - Test with `yt-dlp --version` and `ffmpeg -version`.
+- **OpenAI API errors?**
+  - Double-check your API key and account limits.
+- **ngrok tunnel closes?**
+  - Free ngrok tunnels may time out after 8 hours. Restart as needed or upgrade to a paid plan for persistent tunnels.
+
+### 10. Security & Best Practices
+- Never share your OpenAI API key or ngrok tunnel URL publicly.
+- Use a strong ngrok authtoken and consider restricting allowed IPs (ngrok paid feature).
+- Monitor worker logs for errors or abuse.
+- Restart the worker and ngrok if you change your network or IP address.
+- For production, consider running the worker on a dedicated, always-on device (e.g., Raspberry Pi, home server, or cloud VM with residential proxy).
+
+### 11. Updating the Worker
+- Pull the latest code:
+  ```bash
+  git pull origin main
+  pip install -r requirements.txt
+  ```
+- Restart the worker and ngrok tunnel.
+
+### 12. Useful Commands
+- Check worker logs: `tail -f worker.log` (if logging enabled)
+- Test endpoint: `curl http://localhost:8000/health`
+- Test ngrok: `curl https://abc123.ngrok-free.app/health`
+
 ## Step 1: Prepare Your Repository
 
 Make sure your repository structure looks like this:
