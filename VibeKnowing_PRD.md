@@ -28,6 +28,93 @@ VibeKnowing provides a unified platform that:
 - **Supports multiple input formats** (URLs, file uploads, text input)
 - **Offers real-time processing** with streaming responses
 
+### TODO: Agentic AI & Mainstream Enhancements
+
+These are high-impact, next-generation features to transform VibeKnowing into a true agentic AI platform and drive mainstream adoption:
+
+- **Goal-Oriented Agents**
+  - Users specify a learning goal (e.g., “I want to master topic X from this video”).
+  - The AI agent autonomously:
+    - Extracts, summarizes, and quizzes the content
+    - Suggests a personalized study plan
+    - Tracks user progress and recommends next steps
+  - Example: After uploading a video, the agent offers a step-by-step mastery path, not just a summary.
+
+- **Chained Actions & Proactive Suggestions**
+  - After each action (e.g., summary), the agent suggests logical next steps:
+    - “Would you like a quiz?”
+    - “Generate flashcards?”
+    - “See related readings or videos?”
+  - The agent can chain multiple actions together for a seamless workflow.
+
+- **Personalized Learning & Memory**
+  - User profiles and learning history are tracked securely.
+  - Adaptive quizzes and summaries based on user strengths/weaknesses.
+  - Spaced repetition: The agent schedules review quizzes or flashcards for long-term retention.
+  - Personalized recommendations for new content or review sessions.
+
+- **Autonomous Research Agent**
+  - Given a topic, the agent can:
+    - Find and summarize top videos, articles, and papers from the web
+    - Curate a learning path or “crash course”
+    - Generate a knowledge map or timeline
+  - Example: “Give me a 1-hour crash course on Quantum Computing.”
+
+- **Multi-Source Synthesis**
+  - Combine insights from multiple sources (videos, articles, documents) into a unified summary or study guide.
+  - The agent can highlight consensus, differences, and key takeaways across sources.
+
+- **Calendar/Task Integration**
+  - Add study sessions, reminders, or deadlines to external tools:
+    - Google Calendar
+    - Notion
+    - Todoist, etc.
+  - Example: “Remind me to review this quiz next week.”
+
+- **API & Plugin Ecosystem**
+  - Allow third-party “skills” or plugins, such as:
+    - Export to Anki or Quizlet
+    - Connect to Learning Management Systems (LMS)
+    - Slack/Discord integration for group study
+  - Public API for developers to build on top of VibeKnowing.
+
+- **Voice & Mobile Agent**
+  - Voice-based agent for hands-free learning (e.g., “Hey Vibe, summarize this video”).
+  - Native mobile app for on-the-go study and notifications.
+
+- **Dynamic Flashcards & Spaced Repetition**
+  - Instantly generate flashcards from any content (video, text, document).
+  - Schedule review sessions using spaced repetition algorithms.
+  - Track user performance and adapt flashcard scheduling.
+
+- **Concept Maps & Visualizations**
+  - Auto-generate mind maps, timelines, or diagrams from transcripts and summaries.
+  - Visualize relationships between concepts for deeper understanding.
+
+- **Interactive Q&A Drilldown**
+  - Users can “drill down” on any summary or quiz answer:
+    - Ask follow-up questions
+    - Request more detail or clarification
+    - Explore related concepts
+
+- **Collaborative Learning**
+  - Study groups and shared workspaces
+  - Shared annotations and group quizzes
+  - Public knowledge base for community-generated summaries and quizzes
+
+- **Gamification & Social Features**
+  - Leaderboards, badges, and streaks for engagement
+  - Community content sharing and upvoting
+  - Social profiles and study groups
+
+- **Source Attribution & Explainable AI**
+  - Always show where information comes from (timestamps, links, references)
+  - Provide reasoning or prompt for AI outputs (“Why did you summarize it this way?”)
+
+- **User Data Control**
+  - Let users export, delete, or control their learning data
+  - Transparent privacy controls and data usage explanations
+
 ---
 
 ## Product Features
