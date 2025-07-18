@@ -53,7 +53,7 @@ VibeKnowing provides a unified platform that:
 - **Modern UI**: Clean, responsive design with Tailwind CSS
 - **Real-time Processing**: Streaming responses with progress indicators
 - **Tab-based Navigation**: Easy switching between input types and outputs
-- **Action Buttons**: Download PDFs, copy content, refresh results
+- **Action Buttons**: Download PDFs, copy content
 - **Responsive Design**: Works seamlessly on desktop and mobile
 - **Dark/Light Theme**: User preference support
 
@@ -114,6 +114,7 @@ VibeKnowing provides a unified platform that:
 | Large File Handling | Audio file chunking for processing | ✅ Complete | Dec 2024 |
 | VTT Parsing | Subtitle file processing and cleaning | ✅ Complete | Dec 2024 |
 | Documentation Cleanup | Comprehensive README files and PRD | ✅ Complete | Dec 2024 |
+| UI Simplification | Removed refresh buttons from Summary and Quiz panels for cleaner UX | ✅ Complete | Dec 2024 |
 
 ### 🔄 In Progress Features
 | Feature | Description | Status | Priority |

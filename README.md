@@ -1,50 +1,68 @@
-# VibeKnowing Worker
+# VibeKnowing Backend API
 
 ## 🔥 Project Overview
-**VibeKnowing Worker** is a specialized FastAPI service designed to handle YouTube video processing and transcription. It runs locally with a residential IP address to bypass YouTube's bot detection and data center IP restrictions, ensuring reliable video transcript extraction.
+**VibeKnowing Backend API** is a FastAPI-based service that provides AI-powered content analysis capabilities. It handles transcript extraction, summary generation, quiz creation, and interactive chat functionality for various content types including videos, audio, documents, and websites.
 
 ## 🎯 Core Features
-- **YouTube Video Processing**: Download and extract transcripts from YouTube videos
-- **Playlist Support**: Process entire YouTube playlists
-- **Subtitle Extraction**: Extract VTT subtitle files when available
-- **Audio Transcription**: Fallback to OpenAI Whisper for videos without subtitles
-- **Large File Handling**: Split large audio files into chunks for processing
-- **Residential IP**: Bypass YouTube bot detection using home network IP
+- **Transcript Processing**: Extract and process transcripts from various sources
+- **AI Summarization**: Generate intelligent summaries with streaming responses
+- **Quiz Generation**: Create context-aware questions and answers
+- **Interactive Chat**: Enable conversational AI interactions about content
+- **Website Scraping**: Extract and analyze web content
+- **Multi-format Support**: Handle videos, audio, documents, and text input
 
 ## 🧠 Tech Stack
 - **Python 3.11+**
 - **FastAPI** - Modern web framework for building APIs
-- **yt-dlp** - YouTube video downloading and processing
-- **OpenAI Whisper** - Audio transcription (via OpenAI API)
-- **ffmpeg-python** - Audio/video processing
+- **OpenAI GPT-4** - AI-powered content analysis and generation
+- **Streaming Responses** - Real-time content delivery
+- **CORS Support** - Cross-origin resource sharing
 - **Pydantic** - Data validation and serialization
 
 ## 📁 Project Structure
 ```
-vibeknowing-worker/
-├── worker.py                  # FastAPI worker application
+quicklearn-ai-backend/
+├── main.py                    # FastAPI application entry point
+├── config.py                  # Configuration settings
 ├── requirements.txt           # Python dependencies
 ├── Procfile                  # Render deployment configuration
 ├── runtime.txt               # Python version specification
-├── README.md                 # This file
-├── test_worker.py            # Worker testing script
-└── .gitignore               # Git ignore file
+├── DEPLOYMENT.md             # Deployment guide
+├── services/                 # API service modules
+│   ├── transcript_service.py # Transcript processing endpoints
+│   ├── summary_service.py    # Summary generation endpoints
+│   ├── chat_service.py       # Chat interaction endpoints
+│   └── website_scraper_service.py # Web scraping functionality
+├── utils/                    # Utility modules
+│   ├── openai_utils.py       # OpenAI API integration
+│   ├── openai_prompts.py     # AI prompt templates
+│   ├── text_utils.py         # Text processing utilities
+│   ├── url_utils.py          # URL validation and processing
+│   └── youtube_utils.py      # YouTube-specific utilities
+├── exceptions/               # Custom exception handling
+│   └── custom_exceptions.py  # Custom exception classes
+└── tests/                    # Test suite
+    ├── conftest.py           # Test configuration
+    ├── test_main.py          # Main API tests
+    ├── test_transcript.py    # Transcript service tests
+    ├── test_summary.py       # Summary service tests
+    └── test_chat.py          # Chat service tests
 ```
 
 ## ⚙️ Environment Setup
 
 ### Prerequisites
 - Python 3.11 or higher
-- FFmpeg installed on your system
 - OpenAI API key
-- ngrok account (for tunneling)
+- Worker service running (for YouTube processing)
+- ngrok tunnel (for worker communication)
 
 ### Installation Steps
 
 1. **Clone the repository**
    ```bash
    git clone <repository-url>
-   cd vibeknowing-worker
+   cd quicklearn-ai-backend
    ```
 
 2. **Create and activate virtual environment**
@@ -63,107 +81,123 @@ vibeknowing-worker/
    pip install -r requirements.txt
    ```
 
-4. **Install FFmpeg** (if not already installed)
-   
-   **macOS (using Homebrew):**
-   ```bash
-   brew install ffmpeg
-   ```
-   
-   **Ubuntu/Debian:**
-   ```bash
-   sudo apt update
-   sudo apt install ffmpeg
-   ```
-   
-   **Windows:**
-   - Download from https://ffmpeg.org/download.html
-   - Add to system PATH
-
-5. **Set environment variables**
+4. **Set environment variables**
    ```bash
    export OPENAI_API_KEY="your_openai_api_key_here"
+   export WORKER_URL="https://your-ngrok-url.ngrok-free.app/transcribe"
+   export ALLOWED_ORIGINS="http://localhost:3000,https://your-frontend-url.com"
    ```
 
-## 🚀 Running the Worker
+## 🚀 Running the Backend
 
 ### Development Mode
 ```bash
 # Start the development server
-uvicorn worker:app --reload --host 0.0.0.0 --port 8000
+uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
 ### Production Mode
 ```bash
 # Start the production server
-uvicorn worker:app --host 0.0.0.0 --port 8000
-```
-
-### Using ngrok for Tunneling
-```bash
-# Install ngrok if not already installed
-# Download from https://ngrok.com/download
-
-# Start ngrok tunnel
-ngrok http 8000
-
-# Note the ngrok URL (e.g., https://abc123.ngrok-free.app)
-# Update your backend's WORKER_URL environment variable with this URL
+uvicorn main:app --host 0.0.0.0 --port 8000
 ```
 
 ## 📚 API Documentation
 
 ### Base URL
 - Local: `http://localhost:8000`
-- Tunnelled: `https://your-ngrok-url.ngrok-free.app`
+- Production: `https://your-backend-url.onrender.com`
 
 ### Health Check
 ```bash
 GET /health
-Response: {"status": "healthy", "service": "VibeKnowing Worker"}
+Response: {"status": "healthy", "service": "QuickLearn.AI Backend"}
 ```
 
-### Transcript Service (`/transcribe`)
+### Transcript Service (`/transcript`)
 
-#### Transcribe YouTube Video
+#### Process Transcript
 ```bash
-POST /transcribe
+POST /transcript/process
 Content-Type: application/json
 
 Body:
 {
-  "url": "https://youtube.com/watch?v=VIDEO_ID"
+  "transcript": "transcript text content...",
+  "source_type": "video" | "audio" | "document" | "text"
 }
 
 Response:
 {
-  "transcript": "extracted transcript text...",
-  "source": "subtitles" | "whisper",
-  "duration": "video duration in seconds"
+  "transcript": "processed transcript text...",
+  "word_count": 1500,
+  "processing_time": 0.5
 }
 ```
 
-#### Transcribe YouTube Playlist
+### Summary Service (`/summary`)
+
+#### Generate Summary (Streaming)
 ```bash
-POST /transcribe
+POST /summary/summarize-stream
 Content-Type: application/json
 
 Body:
 {
-  "url": "https://youtube.com/playlist?list=PLAYLIST_ID"
+  "transcript": "transcript text content...",
+  "summary_type": "comprehensive" | "concise" | "bullet_points"
+}
+
+Response: Streaming text chunks
+```
+
+#### Generate Quiz (Streaming)
+```bash
+POST /summary/qna-stream
+Content-Type: application/json
+
+Body:
+{
+  "transcript": "transcript text content...",
+  "num_questions": 5,
+  "difficulty": "easy" | "medium" | "hard"
+}
+
+Response: Streaming Q&A content
+```
+
+### Chat Service (`/chat`)
+
+#### Send Message (Streaming)
+```bash
+POST /chat/send
+Content-Type: application/json
+
+Body:
+{
+  "message": "user question...",
+  "context": "transcript or content context...",
+  "conversation_history": []
+}
+
+Response: Streaming chat response
+```
+
+### Website Scraping (`/scrape`)
+
+#### Scrape Website
+```bash
+POST /scrape
+Content-Type: application/json
+
+Body:
+{
+  "url": "https://example.com"
 }
 
 Response:
 {
-  "transcripts": [
-    {
-      "title": "Video Title",
-      "url": "https://youtube.com/watch?v=VIDEO_ID",
-      "transcript": "extracted transcript text...",
-      "source": "subtitles" | "whisper"
-    }
-  ],
-  "total_videos": 10
+  "transcript": "extracted website content..."
 }
 ```
 
@@ -175,24 +209,30 @@ Response:
    curl http://localhost:8000/health
    ```
 
-2. **Test YouTube Video**
+2. **Test Summary Generation**
    ```bash
-   curl -X POST http://localhost:8000/transcribe \
+   curl -X POST http://localhost:8000/summary/summarize-stream \
      -H "Content-Type: application/json" \
-     -d '{"url": "https://youtube.com/watch?v=VIDEO_ID"}'
+     -d '{"transcript": "Sample transcript content...", "summary_type": "comprehensive"}'
    ```
 
-3. **Test YouTube Playlist**
+3. **Test Chat**
    ```bash
-   curl -X POST http://localhost:8000/transcribe \
+   curl -X POST http://localhost:8000/chat/send \
      -H "Content-Type: application/json" \
-     -d '{"url": "https://youtube.com/playlist?list=PLAYLIST_ID"}'
+     -d '{"message": "What is this about?", "context": "Sample context..."}'
    ```
 
 ### Automated Testing
 ```bash
-# Run the test script
-python test_worker.py
+# Run all tests
+pytest
+
+# Run specific test file
+pytest tests/test_summary.py
+
+# Run with coverage
+pytest --cov=services
 ```
 
 ## 🔧 Configuration
@@ -200,137 +240,95 @@ python test_worker.py
 ### Environment Variables
 | Variable | Description | Required | Default |
 |----------|-------------|----------|---------|
-| `OPENAI_API_KEY` | OpenAI API key for Whisper transcription | Yes | - |
+| `OPENAI_API_KEY` | OpenAI API key for AI services | Yes | - |
+| `WORKER_URL` | Worker service URL for YouTube processing | Yes | - |
+| `ALLOWED_ORIGINS` | CORS allowed origins (comma-separated) | Yes | `http://localhost:3000` |
+| `YOUTUBE_API_KEY` | YouTube API key (optional) | No | - |
 
-### Worker Configuration
-The worker is designed to:
-- Use residential IP for YouTube access
-- Extract subtitles when available (no API key needed)
-- Fall back to Whisper transcription for videos without subtitles
-- Handle large files by splitting into chunks
-- Process playlists efficiently
+### API Configuration
+The backend is designed to:
+- Handle streaming responses for real-time content delivery
+- Process multiple content types (video, audio, document, text)
+- Integrate with worker service for YouTube processing
+- Provide comprehensive error handling and logging
+- Support CORS for frontend integration
 
 ## 🚨 Troubleshooting
 
 ### Common Issues
 
-#### 1. YouTube Access Issues
-**Error**: `Video unavailable` or `Access denied`
-**Solution**:
-- Ensure you're using a residential IP (not data center)
-- Check if video is publicly accessible
-- Try with a different YouTube video
-- Verify yt-dlp is up to date
-
-#### 2. OpenAI API Key Issues
+#### 1. OpenAI API Issues
 **Error**: `Invalid API key` or `Rate limit exceeded`
 **Solution**:
 - Verify your OpenAI API key is correct
 - Check your OpenAI account balance
 - Implement rate limiting if needed
 
-#### 3. FFmpeg Not Found
-**Error**: `ffmpeg command not found`
-**Solution**: Install FFmpeg and ensure it's in your system PATH
-
-#### 4. ngrok Tunnel Issues
-**Error**: `Connection refused` or tunnel not working
+#### 2. Worker Connection Issues
+**Error**: `Connection refused` or worker not responding
 **Solution**:
-- Ensure worker is running on port 8000
+- Ensure worker service is running
 - Check ngrok tunnel is active
-- Verify ngrok URL is accessible
-- Update backend WORKER_URL environment variable
+- Verify WORKER_URL environment variable
 
-#### 5. Large File Processing
-**Error**: `File too large` or timeout
+#### 3. CORS Issues
+**Error**: `CORS policy` or cross-origin errors
 **Solution**:
-- Worker automatically splits large files
-- Check OpenAI API limits
-- Monitor system resources
+- Check ALLOWED_ORIGINS configuration
+- Ensure frontend URL is included
+- Verify HTTPS/HTTP protocol matching
 
-### Performance Optimization
+#### 4. Streaming Issues
+**Error**: `Streaming response broken` or incomplete content
+**Solution**:
+- Check OpenAI API response format
+- Verify streaming implementation
+- Monitor network connectivity
 
-#### 1. Large File Handling
-- Files are automatically split into 25MB chunks
-- Each chunk is processed separately
-- Results are combined into final transcript
+#### 5. Memory Issues
+**Error**: `Memory exceeded` or timeout
+**Solution**:
+- Implement content chunking
+- Monitor memory usage
+- Optimize response processing
 
-#### 2. Playlist Processing
-- Videos are processed sequentially
-- Progress tracking for each video
-- Error handling for individual videos
+## 📊 Performance Optimization
 
-#### 3. Caching
-- Consider implementing transcript caching
-- Cache frequently requested videos
-- Implement Redis for session management
+### Streaming Responses
+- Implement proper chunking for large content
+- Use async processing for better performance
+- Monitor response times and optimize
 
-## 📊 Monitoring and Logging
+### Memory Management
+- Process content in chunks
+- Implement proper cleanup
+- Monitor memory usage
 
-### Logging Configuration
-The worker uses Python's built-in logging. Configure log levels in your deployment environment.
-
-### Health Monitoring
-- Use the `/health` endpoint for health checks
-- Monitor processing times
-- Track OpenAI API usage and costs
-
-### Error Tracking
-- Monitor failed transcript extractions
-- Track YouTube access issues
-- Monitor ngrok tunnel stability
+### Caching Strategy
+- Consider implementing response caching
+- Cache frequently requested content
+- Use Redis for session management
 
 ## 🔒 Security Considerations
 
 ### API Security
-- Use HTTPS in production (via ngrok)
+- Use HTTPS in production
 - Implement API key rotation
 - Add request validation and sanitization
 
-### YouTube Access
-- Use residential IP to avoid bot detection
-- Implement rate limiting
-- Monitor for access restrictions
+### Content Processing
+- Validate and sanitize user inputs
+- Implement content size limits
+- Monitor for malicious content
 
-### Data Privacy
-- Don't log sensitive user data
-- Implement data retention policies
-- Ensure GDPR compliance if applicable
+### Environment Variables
+- Never commit API keys to version control
+- Use environment variables for sensitive data
+- Validate configuration in production
 
-## 🚀 Deployment Options
+## 🚀 Deployment
 
-### Local Deployment (Recommended)
-The worker is designed to run locally with ngrok tunneling:
-
-1. **Run worker locally**
-   ```bash
-   uvicorn worker:app --host 0.0.0.0 --port 8000
-   ```
-
-2. **Start ngrok tunnel**
-   ```bash
-   ngrok http 8000
-   ```
-
-3. **Update backend configuration**
-   - Set `WORKER_URL` to your ngrok URL
-   - Include `/transcribe` endpoint
-
-### Render Deployment (Alternative)
-For cloud deployment (may face YouTube restrictions):
-
-1. **Deploy to Render**
-   - Connect GitHub repository
-   - Set build command: `pip install -r requirements.txt`
-   - Set start command: `uvicorn worker:app --host 0.0.0.0 --port $PORT`
-
-2. **Configure environment variables**
-   ```
-   OPENAI_API_KEY=your_openai_api_key_here
-   ```
-
-3. **Update backend configuration**
-   - Set `WORKER_URL` to your Render worker URL
+See `DEPLOYMENT.md` for detailed deployment instructions to Render or other platforms.
 
 ## 🤝 Contributing
 
@@ -354,4 +352,4 @@ For issues and questions:
 
 ---
 
-**VibeKnowing Worker** - Reliable YouTube processing with residential IP access.
+**VibeKnowing Backend API** - Powering AI-driven content analysis and learning.
